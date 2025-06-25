@@ -73,22 +73,28 @@ export OPENAI_API_KEY="your-api-key-here"
 
 4. **Build vector stores (required for first use):**
 ```bash
-# For Ollama version
-streamlit run not_using/ajcc_tokenizer_ollama.py
+# For Ollama version (local embeddings)
+streamlit run ajcc_tokenizer_ollama.py
 
-# For OpenAI version  
-streamlit run not_using/ajcc_tokenizer_openai.py
+# For OpenAI version (cloud embeddings)
+streamlit run ajcc_tokenizer_openai.py
+
+# Note: Vector stores are built once and saved to faiss_stores/ directory
+# You need to upload AJCC PDF guidelines during the tokenization process
 ```
 
 ## 📖 Usage
 
 ### Command Line Interface
 ```bash
-# Analyze a report with Ollama
+# Main CLI interface (full workflow with interactive queries)
+python main.py --backend ollama --report "Your radiologic report text here" --interactive
+
+# API interface (simplified JSON output)
 python tn_staging_api.py --backend ollama --report "Your radiologic report text here"
 
 # Analyze with OpenAI
-python tn_staging_api.py --backend openai --report "Your radiologic report text here"
+python main.py --backend openai --report "Your radiologic report text here"
 
 # Check backend status
 python tn_staging_api.py --status --backend ollama
@@ -260,7 +266,7 @@ python not_using/validate_system.py
 **Vector store not found:**
 ```bash
 # Rebuild vector stores
-streamlit run not_using/ajcc_tokenizer_ollama.py
+streamlit run ajcc_tokenizer_ollama.py
 ```
 
 **Ollama connection error:**
