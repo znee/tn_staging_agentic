@@ -49,6 +49,9 @@ class AgentContext(BaseModel):
     context_Q: Optional[str] = None  # Query for additional info
     context_RR: Optional[str] = None  # User response to query
     
+    # Report generation
+    final_report: Optional[str] = None  # Complete staging report
+    
     # Metadata
     metadata: Dict[str, Any] = Field(default_factory=dict)
     

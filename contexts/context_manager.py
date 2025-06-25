@@ -125,6 +125,7 @@ class ContextManager:
             "n_stage": self.context.context_N,
             "t_confidence": self.context.context_CT,
             "n_confidence": self.context.context_CN,
+            "final_report": self.context.final_report,
             "messages_processed": len(self.message_history),
             "has_errors": any(m.status == AgentStatus.FAILED for m in self.message_history),
             "needs_query": self.needs_query()

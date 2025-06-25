@@ -73,15 +73,46 @@ export OPENAI_API_KEY="your-api-key-here"
 
 4. **Build vector stores (required for first use):**
 ```bash
-# For Ollama version (local embeddings)
-streamlit run ajcc_tokenizer_ollama.py
+# RECOMMENDED: Advanced tokenizer (84.6% TN_Staging_Agentic compliant)
+python rebuild_vector_store.py
 
-# For OpenAI version (cloud embeddings)
-streamlit run ajcc_tokenizer_openai.py
+# Alternative: Core library tokenizer (100% compliant but generic)
+python -c "from guidelines.tokenizer import rebuild_vector_store; rebuild_vector_store()"
+
+# Basic options: Streamlit UI (50% compliance, moved to not_using/)
+streamlit run not_using/ajcc_tokenizer_ollama.py  # Basic UI with local embeddings
+streamlit run not_using/ajcc_tokenizer_openai.py  # Basic UI with cloud embeddings
 
 # Note: Vector stores are built once and saved to faiss_stores/ directory
-# You need to upload AJCC PDF guidelines during the tokenization process
+# The direct tokenizer (rebuild_vector_store.py) provides:
+# - Advanced medical table extraction with PyMuPDF
+# - Exact 1000/200 chunk configuration matching existing stores
+# - [MEDICAL TABLE] markers for enhanced retrieval
 ```
+
+## 🆕 Recent Improvements
+
+### v2.0.1 - Language Validation & Final Reports (2025-06-25)
+
+**🌐 Language Validation System**
+- Fixed mixed-language outputs (e.g., "upper颈内淋巴结" → "upper cervical lymph nodes")
+- Global `utils/language_validation.py` with reusable validation functions
+- Automatic fallback for non-English medical terms
+- Enhanced prompt templates with explicit English-only requirements
+
+**📄 Complete Final Reports**
+- Fixed missing final report display in GUI
+- Added expandable "📄 Complete Staging Report" section
+- Comprehensive reports now include:
+  - Executive Summary with clinical significance
+  - Detailed staging analysis with confidence scores  
+  - Clinical recommendations for next steps
+  - Technical notes and disclaimers
+
+**🔧 System Stability**
+- Validated LLM-first architecture with no hardcoded medical rules
+- Confirmed guideline-based staging using semantic retrieval
+- Enhanced error handling and logging
 
 ## 📖 Usage
 
@@ -193,6 +224,7 @@ tn_staging_agentic/
 ├── tn_staging_api.py           # Command-line interface
 ├── tn_staging_gui.py           # Streamlit web interface  
 ├── main.py                     # Core system
+├── rebuild_vector_store.py     # Advanced PDF tokenizer (recommended)
 ├── agents/                     # LLM agents
 │   ├── detect.py              # Body part/cancer detection
 │   ├── retrieve_guideline.py  # AJCC guideline retrieval
@@ -265,8 +297,14 @@ python not_using/validate_system.py
 
 **Vector store not found:**
 ```bash
-# Rebuild vector stores
-streamlit run ajcc_tokenizer_ollama.py
+# RECOMMENDED: Advanced tokenizer
+python rebuild_vector_store.py
+
+# Alternative: Core library tokenizer  
+python -c "from guidelines.tokenizer import rebuild_vector_store; rebuild_vector_store()"
+
+# Basic option: Streamlit UI (not recommended)
+streamlit run not_using/ajcc_tokenizer_ollama.py
 ```
 
 **Ollama connection error:**

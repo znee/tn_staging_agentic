@@ -94,12 +94,12 @@ not_using/
 old/
 
 # ============================================================================
-# Test Reports & Sample Data (EXCLUDE)
+# Test Reports & Sample Data (PARTIAL EXCLUDE)
 # ============================================================================
 test_*.txt
 sample_reports/
 test_results/
-tests/
+# tests/ - include main test directory
 
 # ============================================================================
 # Streamlit
@@ -128,9 +128,9 @@ Thumbs.db
 guidelines/pdfs/*.pdf
 
 # ============================================================================
-# Project Documentation (EXCLUDE - internal specifications)
+# Project Documentation (INCLUDE - main project specifications)
 # ============================================================================
-CLAUDE.md
+# CLAUDE.md is now included as main project documentation
 
 # ============================================================================
 # Conda Environment Files (INCLUDE - but exclude if contains sensitive data)

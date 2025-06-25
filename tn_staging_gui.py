@@ -232,6 +232,11 @@ def display_chat_history():
                             
                             st.markdown(f"**Combined Stage**: {content.get('tn_stage', 'Unknown')}")
                             
+                            # Show final report if available
+                            if content.get('final_report'):
+                                with st.expander("📄 Complete Staging Report", expanded=False):
+                                    st.text(content['final_report'])
+                            
                             # Show rationale
                             if content.get('t_rationale'):
                                 with st.expander("T Staging Rationale"):

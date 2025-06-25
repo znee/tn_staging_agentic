@@ -176,6 +176,12 @@ class QueryAgent(BaseAgent):
         
         prompt = f"""Generate specific questions to clarify T staging for {cancer_type} of {body_part}.
 
+CRITICAL LANGUAGE REQUIREMENT: 
+- OUTPUT MUST BE IN ENGLISH ONLY
+- NO Chinese, Korean, Japanese, or other non-English characters
+- NO mixed language output
+- Use only standard English medical terminology
+
 Issues identified:
 {chr(10).join(f"- {issue}" for issue in issues)}
 
@@ -188,6 +194,8 @@ Focus on:
 - Depth of invasion
 - Extension to adjacent structures
 - Specific anatomical landmarks
+
+Use standard English anatomical terms only.
 
 Return questions in JSON format:
 [
@@ -218,7 +226,12 @@ Return questions in JSON format:
                 json_text = cleaned_response
             
             try:
-                return json.loads(json_text)
+                parsed_questions = json.loads(json_text)
+                
+                # Validate English-only output  
+                validated_questions = self._validate_english_output(parsed_questions)
+                return validated_questions
+                
             except json.JSONDecodeError:
                 self.logger.warning(f"JSON parsing failed for T questions. Response: {response[:200]}...")
                 # Try to extract questions from text fallback
@@ -255,6 +268,12 @@ Return questions in JSON format:
         
         prompt = f"""Generate specific questions to clarify N staging for {cancer_type} of {body_part}.
 
+CRITICAL LANGUAGE REQUIREMENT: 
+- OUTPUT MUST BE IN ENGLISH ONLY
+- NO Chinese, Korean, Japanese, or other non-English characters
+- NO mixed language output
+- Use only standard English medical terminology
+
 IMPORTANT CONTEXT: We are analyzing RADIOLOGIC REPORTS (CT, MRI, PET scans), not pathology specimens.
 
 Issues identified:
@@ -268,9 +287,10 @@ Focus on:
 - Presence/absence of enlarged or suspicious lymph nodes on imaging
 - Number of enlarged nodes visible on imaging
 - Size of largest enlarged node (in cm)
-- Anatomical location and laterality on imaging
+- Anatomical location and laterality on imaging (use terms like "cervical", "supraclavicular", "level I/II/III/IV")
 
 Use radiologic terminology and ask about imaging findings, not pathology.
+Use standard English anatomical terms: "cervical lymph nodes", "internal jugular chain", "upper neck nodes".
 
 Return questions in JSON format:
 [
@@ -301,7 +321,12 @@ Return questions in JSON format:
                 json_text = cleaned_response
             
             try:
-                return json.loads(json_text)
+                parsed_questions = json.loads(json_text)
+                
+                # Validate English-only output
+                validated_questions = self._validate_english_output(parsed_questions)
+                return validated_questions
+                
             except json.JSONDecodeError:
                 self.logger.warning(f"JSON parsing failed for N questions. Response: {response[:200]}...")
                 # Try to extract questions from text fallback
@@ -424,6 +449,63 @@ Return questions in JSON format:
                 })
         
         return questions
+    
+    def _validate_english_output(self, questions: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Validate that all questions are in English only.
+        
+        Args:
+            questions: List of question dictionaries
+            
+        Returns:
+            Validated and cleaned questions
+        """
+        import re
+        
+        validated_questions = []
+        
+        for q in questions:
+            question_text = q.get("question", "")
+            
+            # Check for non-Latin characters (Chinese, Korean, Japanese, etc.)
+            has_non_latin = bool(re.search(r'[\u4e00-\u9fff\u3400-\u4dbf\uac00-\ud7af\u3040-\u309f\u30a0-\u30ff]', question_text))
+            
+            if has_non_latin:
+                self.logger.warning(f"Detected non-English characters in question: {question_text[:50]}...")
+                
+                # Replace with fallback English question
+                fallback_question = {
+                    "question": "Are there any enlarged lymph nodes (≥1 cm) or nodes with suspicious features visible on imaging? If yes, please specify number, size, and location using standard anatomical terms.",
+                    "purpose": "lymph_node_staging_clarification",
+                    "priority": "high"
+                }
+                validated_questions.append(fallback_question)
+            else:
+                # Additional cleanup - replace any mixed terms
+                clean_question = question_text
+                
+                # Common Chinese medical terms to replace
+                replacements = {
+                    "颈内淋巴结": "cervical lymph nodes",
+                    "淋巴结": "lymph nodes",
+                    "颈部": "neck",
+                    "上颈": "upper cervical"
+                }
+                
+                for chinese, english in replacements.items():
+                    clean_question = clean_question.replace(chinese, english)
+                
+                q["question"] = clean_question
+                validated_questions.append(q)
+        
+        # Ensure at least one question exists
+        if not validated_questions:
+            validated_questions.append({
+                "question": "Are there any enlarged or suspicious lymph nodes visible on the radiologic imaging? Please specify number, size (in cm), and anatomical location.",
+                "purpose": "lymph_node_staging_fallback",
+                "priority": "high"
+            })
+        
+        return validated_questions
     
     def _format_questions(self, questions: List[Dict[str, str]]) -> str:
         """Format questions for presentation to user.
