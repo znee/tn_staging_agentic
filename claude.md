@@ -196,7 +196,7 @@ streamlit run not_using/ajcc_tokenizer_openai.py  # Basic Streamlit UI
 - **Medical table preservation**: `[MEDICAL TABLE]` and `[END TABLE]` markers
 - **Exact configuration**: 1000 chunk size, 200 overlap (matches production stores)
 - **Page-level processing**: Preserves document structure with page markers
-- **Proven results**: Produces exactly 83 chunks from oral cavity PDF
+- **Current PDF results**: Produces 34 chunks from `Oralcavity_oropharyngeal.pdf` (6 pages, 4 medical tables detected)
 
 **Streamlit App Features**:
 - User-friendly web interface

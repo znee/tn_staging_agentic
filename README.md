@@ -114,6 +114,12 @@ streamlit run not_using/ajcc_tokenizer_openai.py  # Basic UI with cloud embeddin
 - Confirmed guideline-based staging using semantic retrieval
 - Enhanced error handling and logging
 
+**📄 Updated Guidelines (2025-06-25)**
+- New PDF: `Oralcavity_oropharyngeal.pdf` with enhanced tabular content
+- 4 medical tables detected and properly tokenized (T/N staging for p16+ and p16- cancers)
+- 34 semantic chunks generated with PyMuPDF table extraction
+- Fixed tokenizer metadata bug for improved table detection
+
 ## 📖 Usage
 
 ### Command Line Interface

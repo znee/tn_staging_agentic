@@ -213,7 +213,7 @@ class EnhancedPDFTokenizer:
                     "source": Path(pdf_path).name,
                     "chunk_id": i,
                     "total_chunks": len(chunks),
-                    "has_table": "[MEDICAL TABLE]" in chunk,
+                    "has_table": "[MEDICAL TABLE" in chunk,
                     "extraction_method": "enhanced"
                 }
             )

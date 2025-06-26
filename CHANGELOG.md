@@ -1,5 +1,21 @@
 # TN Staging System - Changelog
 
+## [2.0.2] - 2025-06-25 - Guidelines Update & Tokenizer Enhancement
+
+### 📄 Updated Guidelines
+- **New PDF**: `Oralcavity_oropharyngeal.pdf` with enhanced tabular structures
+- **Enhanced Table Detection**: 4 medical tables successfully tokenized (p16+ and p16- cancer staging)
+- **Improved Chunking**: 34 semantic chunks generated (optimized from previous 83)
+
+### 🔧 Tokenizer Improvements
+- **Fixed Metadata Bug**: `has_table` metadata now correctly identifies chunks with medical tables
+- **Enhanced Pattern Matching**: Updated pattern from exact `"[MEDICAL TABLE]"` to flexible `"[MEDICAL TABLE"`
+- **Better Retrieval**: Improved semantic search for table-containing chunks
+
+### 🧹 Project Organization
+- **Cleanup**: Moved debugging and analysis scripts to `not_using/` directory
+- **Documentation**: Updated all references to reflect new PDF and tokenization results
+
 ## [2.0.0] - 2024-06-24 - Production Release
 
 ### 🚀 Major Features Added
