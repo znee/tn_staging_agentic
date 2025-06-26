@@ -79,7 +79,7 @@ class TNStagingGUI:
                 cmd, 
                 capture_output=True, 
                 text=True, 
-                timeout=180  # 3 minute timeout
+                timeout=900  # 15 minute timeout
             )
             
             if result.returncode == 0:
@@ -154,7 +154,7 @@ class TNStagingGUI:
                 }
                 
         except subprocess.TimeoutExpired:
-            return {"success": False, "error": "Analysis timed out (3 minutes)"}
+            return {"success": False, "error": "Analysis timed out (15 minutes)"}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -457,7 +457,7 @@ def main():
             st.session_state.pending_analysis = None  # Clear pending
             
             # Show progress and run analysis
-            with st.spinner("Processing analysis... This may take 1-3 minutes"):
+            with st.spinner("Processing analysis... This may take 1-5 minutes"):
                 progress_bar = st.progress(0, "Initializing...")
                 
                 # Run analysis
