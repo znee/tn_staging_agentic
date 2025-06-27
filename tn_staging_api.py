@@ -116,28 +116,22 @@ class TNStagingAPI:
         if not self.system:
             raise RuntimeError("System not initialized")
         
-        # Check if we have the right session, if not, try to restore or simulate continuation
+        # Check if we have the right session
         current_session_id = getattr(self.system, 'session_id', None)
         
         if session_id != current_session_id:
-            # For now, create a simplified analysis with the user response as additional context
-            self.logger.warning(f"Session ID mismatch. Current: {current_session_id}, Requested: {session_id}")
-            self.logger.info("Performing new analysis with user response as additional context")
-            
-            # Create a combined report with user response
-            combined_report = f"User provided additional information: {user_response}"
-            
+            # Session mismatch - this happens with subprocess calls
+            # For now, return an error suggesting to use the optimized GUI
             return {
                 "success": False,
-                "error": "Session expired. Please start a new analysis with your additional information included in the original report.",
+                "error": f"Session mismatch. Expected: {current_session_id}, Got: {session_id}. Use optimized GUI for session continuation.",
                 "backend": self.backend,
                 "session_id": current_session_id,
-                "suggested_action": "restart_with_context",
-                "additional_context": user_response
+                "suggested_action": "use_optimized_gui"
             }
         
         try:
-            # Add user response and continue analysis
+            # Add user response and continue analysis using optimized workflow
             result = await self.system.continue_analysis_with_response(user_response)
             
             if "success" not in result:
@@ -164,6 +158,239 @@ class TNStagingAPI:
             Continued analysis results
         """
         return asyncio.run(self.continue_analysis(session_id, user_response))
+    
+    async def analyze_with_selective_preservation(
+        self, 
+        enhanced_report: str, 
+        preserved_contexts: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """Analyze report with selective preservation of high-confidence contexts.
+        
+        Args:
+            enhanced_report: Enhanced report text with additional information
+            preserved_contexts: Contexts to preserve from previous analysis
+            
+        Returns:
+            Analysis results with selective preservation applied
+        """
+        if not self.system:
+            raise RuntimeError("System not initialized")
+        
+        if not enhanced_report.strip():
+            return {
+                "success": False,
+                "error": "Empty enhanced report text",
+                "backend": self.backend
+            }
+        
+        try:
+            # Use existing system but reset context for fresh analysis
+            selective_system = self.system
+            
+            # Reset context for fresh analysis while preserving system state
+            from contexts.context_manager_optimized import AgentContext
+            selective_system.context_manager.context = AgentContext()
+            
+            # Preserve session metadata
+            if hasattr(selective_system.context_manager, 'session_id'):
+                selective_system.context_manager.context.metadata["session_id"] = selective_system.context_manager.session_id
+            
+            # Preserve round tracking for multi-round scenarios
+            if preserved_contexts and preserved_contexts.get("round_number"):
+                selective_system.context_manager.context.metadata["round_number"] = preserved_contexts["round_number"]
+            
+            # Initialize context with enhanced report
+            selective_system.context_manager.context.context_R = enhanced_report
+            
+            # Apply preserved contexts if provided
+            if preserved_contexts:
+                selective_system.logger.info(f"🚀 SELECTIVE PRESERVATION ACTIVE - Contexts: {list(preserved_contexts.keys())}")
+                context = selective_system.context_manager.context
+                
+                # Preserve body part and cancer type detection
+                if preserved_contexts.get("body_part") and preserved_contexts.get("cancer_type"):
+                    context.context_B = {
+                        "body_part": preserved_contexts["body_part"],
+                        "cancer_type": preserved_contexts["cancer_type"]
+                    }
+                
+                # Preserve T staging if high confidence
+                if (preserved_contexts.get("t_stage") and 
+                    preserved_contexts.get("t_stage") != "TX" and
+                    preserved_contexts.get("t_confidence", 0) >= 0.7):
+                    context.context_T = preserved_contexts["t_stage"]
+                    context.context_CT = preserved_contexts["t_confidence"]
+                    context.context_RationaleT = preserved_contexts.get("t_rationale")
+                    selective_system.logger.info(f"✅ Preserved T staging: {context.context_T} (confidence: {context.context_CT:.1%})")
+                else:
+                    selective_system.logger.info(f"❌ T staging not preserved - stage: {preserved_contexts.get('t_stage')}, confidence: {preserved_contexts.get('t_confidence', 0):.1%}")
+                
+                # Preserve N staging if high confidence
+                if (preserved_contexts.get("n_stage") and 
+                    preserved_contexts.get("n_stage") != "NX" and
+                    preserved_contexts.get("n_confidence", 0) >= 0.7):
+                    context.context_N = preserved_contexts["n_stage"]
+                    context.context_CN = preserved_contexts["n_confidence"]
+                    context.context_RationaleN = preserved_contexts.get("n_rationale")
+                    selective_system.logger.info(f"✅ Preserved N staging: {context.context_N} (confidence: {context.context_CN:.1%})")
+                else:
+                    selective_system.logger.info(f"❌ N staging not preserved - stage: {preserved_contexts.get('n_stage')}, confidence: {preserved_contexts.get('n_confidence', 0):.1%}")
+                
+                # Preserve guidelines if available (for efficiency)
+                if preserved_contexts.get("t_guidelines"):
+                    context.context_GT = preserved_contexts["t_guidelines"]
+                if preserved_contexts.get("n_guidelines"):
+                    context.context_GN = preserved_contexts["n_guidelines"]
+            
+            # Run selective workflow
+            if preserved_contexts:
+                # Skip detection if we have preserved body part info
+                if not (preserved_contexts.get("body_part") and preserved_contexts.get("cancer_type")):
+                    await selective_system.orchestrator._run_agent("detect")
+                else:
+                    selective_system.logger.info("Skipping detection - body part and cancer type preserved from previous session")
+                
+                # Check if guideline retrieval is needed
+                needs_t_restaging = selective_system.context_manager.needs_t_restaging()
+                needs_n_restaging = selective_system.context_manager.needs_n_restaging()
+                has_preserved_guidelines = (
+                    preserved_contexts.get("t_guidelines") and 
+                    preserved_contexts.get("n_guidelines")
+                )
+                
+                selective_system.logger.info(f"🔍 Re-staging needs: T={needs_t_restaging}, N={needs_n_restaging}, Guidelines preserved={has_preserved_guidelines}")
+                
+                if (needs_t_restaging or needs_n_restaging) and not has_preserved_guidelines:
+                    # Need guidelines for re-staging and don't have them preserved
+                    selective_system.logger.info("Retrieving guidelines for re-staging")
+                    await selective_system.orchestrator._run_agent("retrieve_guideline")
+                elif has_preserved_guidelines and (needs_t_restaging or needs_n_restaging):
+                    # Have preserved guidelines but need re-staging - use preserved guidelines
+                    selective_system.logger.info("Using preserved guidelines for re-staging")
+                elif not (needs_t_restaging or needs_n_restaging):
+                    # No re-staging needed
+                    selective_system.logger.info("Skipping guideline retrieval - no re-staging needed")
+                
+                # Run only necessary staging agents
+                tasks = []
+                agents_rerun = []
+                
+                # Check if T staging needs to be re-run
+                if selective_system.context_manager.needs_t_restaging():
+                    tasks.append(selective_system.orchestrator._run_agent("staging_t"))
+                    agents_rerun.append("T")
+                
+                # Check if N staging needs to be re-run
+                if selective_system.context_manager.needs_n_restaging():
+                    tasks.append(selective_system.orchestrator._run_agent("staging_n"))
+                    agents_rerun.append("N")
+                
+                # Run necessary staging agents
+                if tasks:
+                    await asyncio.gather(*tasks)
+                
+                # Generate final report
+                await selective_system.orchestrator._run_agent("report")
+                
+                # Log what was preserved vs re-analyzed
+                selective_system.logger.info(f"Selective preservation: Re-ran {agents_rerun}, preserved others")
+                
+            else:
+                # No preserved contexts - run full analysis
+                results = await selective_system.orchestrator.run_initial_workflow()
+                if results.get("query_needed"):
+                    # Still need query even after enhancement
+                    final_context = selective_system.context_manager.get_context()
+                    return {
+                        "success": True,
+                        "query_needed": True,
+                        "query_question": results.get("query_question") or final_context.context_Q,
+                        "t_stage": final_context.context_T,
+                        "n_stage": final_context.context_N,
+                        "t_confidence": final_context.context_CT,
+                        "n_confidence": final_context.context_CN,
+                        "t_rationale": final_context.context_RationaleT,
+                        "n_rationale": final_context.context_RationaleN,
+                        "body_part": final_context.context_B.get("body_part") if final_context.context_B else None,
+                        "cancer_type": final_context.context_B.get("cancer_type") if final_context.context_B else None,
+                        "session_id": selective_system.session_id,
+                        "backend": self.backend
+                    }
+            
+            # Get final results
+            final_context = selective_system.context_manager.get_context()
+            
+            result = {
+                "success": True,
+                "tn_stage": f"{final_context.context_T}{final_context.context_N}",
+                "t_stage": final_context.context_T,
+                "n_stage": final_context.context_N,
+                "t_confidence": final_context.context_CT,
+                "n_confidence": final_context.context_CN,
+                "t_rationale": final_context.context_RationaleT,
+                "n_rationale": final_context.context_RationaleN,
+                "body_part": final_context.context_B.get("body_part") if final_context.context_B else None,
+                "cancer_type": final_context.context_B.get("cancer_type") if final_context.context_B else None,
+                "final_report": final_context.final_report,
+                "session_id": selective_system.session_id,
+                "backend": self.backend
+            }
+            
+            # Add selective preservation metadata
+            if preserved_contexts:
+                # Recalculate these for metadata (they're in local scope from the workflow)
+                final_context = selective_system.context_manager.get_context()
+                preserved_t = (preserved_contexts.get("t_stage") and 
+                              preserved_contexts.get("t_stage") != "TX" and
+                              preserved_contexts.get("t_confidence", 0) >= 0.7)
+                preserved_n = (preserved_contexts.get("n_stage") and 
+                              preserved_contexts.get("n_stage") != "NX" and
+                              preserved_contexts.get("n_confidence", 0) >= 0.7)
+                
+                skipped_agents = []
+                if preserved_contexts.get("body_part") and preserved_contexts.get("cancer_type"):
+                    skipped_agents.append("detection")
+                if preserved_t and preserved_n:
+                    skipped_agents.append("guideline_retrieval")
+                
+                result["metadata"] = {
+                    "selective_preservation": True,
+                    "preserved_contexts": preserved_contexts,
+                    "agents_rerun": agents_rerun if 'agents_rerun' in locals() else [],
+                    "agents_skipped": skipped_agents,
+                    "optimization_details": {
+                        "detection_skipped": "detection" in skipped_agents,
+                        "guideline_retrieval_skipped": "guideline_retrieval" in skipped_agents,
+                        "t_staging_preserved": preserved_t,
+                        "n_staging_preserved": preserved_n
+                    }
+                }
+            
+            return result
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "backend": self.backend,
+                "report_length": len(enhanced_report)
+            }
+    
+    def analyze_with_selective_preservation_sync(
+        self, 
+        enhanced_report: str, 
+        preserved_contexts: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """Synchronous wrapper for selective preservation analysis.
+        
+        Args:
+            enhanced_report: Enhanced report text with additional information
+            preserved_contexts: Contexts to preserve from previous analysis
+            
+        Returns:
+            Analysis results with selective preservation applied
+        """
+        return asyncio.run(self.analyze_with_selective_preservation(enhanced_report, preserved_contexts))
     
     def check_backend_status(self) -> Dict[str, Any]:
         """Check backend status and requirements.

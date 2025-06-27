@@ -52,6 +52,7 @@ Thumbs.db
 # Logs & Session Data (EXCLUDE - too much personal data)
 # ============================================================================
 logs/
+sessions/
 *.log
 *.jsonl
 

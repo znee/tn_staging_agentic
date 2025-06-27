@@ -44,7 +44,8 @@ class SessionLogger:
     def _setup_loggers(self):
         """Set up session-specific loggers."""
         # Create formatters
-        detailed_formatter = logging.Formatter(
+        # Compact formatter for .log files (CLI-style)
+        compact_formatter = logging.Formatter(
             '[%(asctime)s] [%(name)s] %(levelname)s: %(message)s'
         )
         
@@ -52,10 +53,10 @@ class SessionLogger:
             '[%(levelname)s] %(name)s: %(message)s'
         )
         
-        # File handler for detailed logs
+        # File handler for compact logs (CLI-style)
         file_handler = logging.FileHandler(self.log_file)
         file_handler.setLevel(self.log_level)
-        file_handler.setFormatter(detailed_formatter)
+        file_handler.setFormatter(compact_formatter)
         
         # Console handler for important messages
         console_handler = logging.StreamHandler(sys.stdout)
@@ -82,12 +83,12 @@ class SessionLogger:
             "tn_staging_system",
             "workflow_orchestrator", 
             "context_manager",
-            "detection_agent",
-            "guideline_retrieval_agent",
-            "t_staging_agent",
-            "n_staging_agent",
-            "query_agent",
-            "report_agent",
+            "agent.detection_agent",
+            "agent.guideline_retrieval_agent", 
+            "agent.t_staging_agent",
+            "agent.n_staging_agent",
+            "agent.query_agent",
+            "agent.report_agent",
             "openai_provider",
             "ollama_provider",
             "hybrid_provider"
@@ -118,25 +119,25 @@ class SessionLogger:
         with open(self.json_log_file, 'a') as f:
             f.write(json.dumps(log_entry) + '\n')
         
-        # Log to text file via standard logger
+        # Log compact message to text file via standard logger
         logger = logging.getLogger("session_events")
-        log_message = f"[{event_type}] {json.dumps(data, separators=(',', ':'))}"
+        compact_message = self._create_compact_log_message(event_type, data)
         
         if level == "debug":
-            logger.debug(log_message)
+            logger.debug(compact_message)
         elif level == "info":
-            logger.info(log_message)
+            logger.info(compact_message)
         elif level == "warning":
-            logger.warning(log_message)
+            logger.warning(compact_message)
         elif level == "error":
-            logger.error(log_message)
+            logger.error(compact_message)
     
     def log_analysis_start(self, report_text: str, backend: str, initial_context: Optional[Dict] = None):
         """Log analysis start event."""
         event_data = {
             "backend": backend,
             "report_length": len(report_text),
-            "report_preview": report_text[:200] + "..." if len(report_text) > 200 else report_text
+            "report_text": report_text  # Store full report text, no truncation
         }
         
         if initial_context:
@@ -194,56 +195,20 @@ class SessionLogger:
         }, level="error")
     
     def _summarize_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Summarize data for logging (avoid huge logs)."""
+        """Preserve full data for JSONL logging."""
         if not data:
             return {}
         
-        summary = {}
-        for key, value in data.items():
-            if isinstance(value, str) and len(value) > 100:
-                summary[key] = value[:100] + "..."
-            elif isinstance(value, dict):
-                summary[key] = {k: f"<{type(v).__name__}>" for k, v in value.items()}
-            elif isinstance(value, list):
-                summary[key] = f"<list of {len(value)} items>"
-            else:
-                summary[key] = value
-        
-        return summary
+        # Return data as-is for JSONL, no truncation
+        return data
     
     def _summarize_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Summarize agent context for logging."""
+        """Preserve full context for JSONL logging."""
         if not context:
             return {}
-            
-        summary = {}
         
-        # Key context fields to track
-        key_fields = [
-            "context_R", "context_B", "context_GT", "context_GN", 
-            "context_T", "context_N", "context_CT", "context_CN",
-            "context_RationaleT", "context_RationaleN", "context_Q", "context_RR"
-        ]
-        
-        for field in key_fields:
-            if field in context:
-                value = context[field]
-                if isinstance(value, str):
-                    if len(value) > 200:
-                        summary[field] = value[:200] + "..."
-                    else:
-                        summary[field] = value
-                elif isinstance(value, dict):
-                    summary[field] = {k: str(v)[:50] + "..." if len(str(v)) > 50 else v 
-                                    for k, v in value.items()}
-                else:
-                    summary[field] = value
-                    
-        # Add metadata if present
-        if "metadata" in context:
-            summary["metadata"] = self._summarize_data(context["metadata"])
-            
-        return summary
+        # Return full context without truncation for JSONL
+        return context
     
     def finalize_session(self, summary: Optional[Dict[str, Any]] = None):
         """Finalize session logging."""
@@ -285,6 +250,72 @@ class SessionLogger:
             "logs": logs,
             "metadata": self.session_metadata
         }
+    
+    def _create_compact_log_message(self, event_type: str, data: Dict[str, Any]) -> str:
+        """Create compact log message for .log files (CLI-style).
+        
+        Args:
+            event_type: Type of event
+            data: Event data
+            
+        Returns:
+            Compact log message string
+        """
+        if event_type == "session_start":
+            return f"Session started: {data.get('session_id', 'unknown')}"
+            
+        elif event_type == "system_init":
+            return f"System initialized: {data.get('backend', 'unknown')} backend"
+            
+        elif event_type == "analysis_start":
+            backend = data.get('backend', 'unknown')
+            report_length = data.get('report_length', 0)
+            return f"Analysis started: {backend} backend, report length: {report_length}"
+            
+        elif event_type == "agent_execution":
+            agent = data.get('agent', 'unknown')
+            status = data.get('status', 'unknown')
+            duration = data.get('duration_seconds', 0)
+            if status == 'success':
+                return f"Completed execution with status: AgentStatus.SUCCESS"
+            elif status == 'error':
+                error = data.get('error', 'unknown error')
+                return f"Failed with error: {error}"
+            else:
+                return f"Status {status} (duration: {duration:.1f}s)"
+                
+        elif event_type == "analysis_complete":
+            success = data.get('success', False)
+            tn_stage = data.get('tn_stage', 'unknown')
+            duration = data.get('duration_seconds', 0)
+            if success:
+                return f"Analysis complete: {tn_stage} (duration: {duration:.2f}s)"
+            else:
+                return f"Analysis failed (duration: {duration:.2f}s)"
+                
+        elif event_type == "user_interaction":
+            interaction_type = data.get('type', 'unknown')
+            if interaction_type == "query_response":
+                response_length = data.get('response_length', 0)
+                return f"User response received: {response_length} characters"
+            else:
+                return f"User interaction: {interaction_type}"
+                
+        elif event_type == "error":
+            error_type = data.get('error_type', 'unknown')
+            error_message = data.get('error_message', 'unknown')
+            return f"Error [{error_type}]: {error_message}"
+            
+        elif event_type == "workflow_optimization":
+            agents_rerun = data.get('agents_rerun', [])
+            if agents_rerun:
+                return f"Workflow optimization: Re-running agents: {', '.join(agents_rerun)}"
+            else:
+                return "Workflow optimization: No agents need re-running"
+                
+        else:
+            # Generic compact message for unknown event types
+            return f"[{event_type}]: {str(data)[:100]}..."
 
 def setup_logging(session_id: str, debug: bool = False) -> SessionLogger:
     """Set up logging for a session.

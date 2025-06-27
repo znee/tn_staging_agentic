@@ -18,7 +18,7 @@ from agents.staging_t import TStagingAgent
 from agents.staging_n import NStagingAgent
 from agents.query import QueryAgent
 from agents.report import ReportAgent
-from contexts.context_manager import ContextManager, WorkflowOrchestrator
+from contexts.context_manager_optimized import OptimizedContextManager, OptimizedWorkflowOrchestrator
 from config import (
     LLMProviderFactory, create_hybrid_provider,
     get_openai_config, get_ollama_config, get_hybrid_config,
@@ -103,11 +103,11 @@ class TNStagingSystem:
         # Initialize agents
         self._initialize_agents()
         
-        # Initialize context manager and orchestrator
-        self.context_manager = ContextManager(session_id=self.session_id)
+        # Initialize optimized context manager and orchestrator
+        self.context_manager = OptimizedContextManager(session_id=self.session_id)
         # Attach session logger to context manager for detailed logging
         self.context_manager.session_logger = self.session_logger
-        self.orchestrator = WorkflowOrchestrator(self.agents, self.context_manager)
+        self.orchestrator = OptimizedWorkflowOrchestrator(self.agents, self.context_manager)
         
         self.logger.info("System initialization complete")
     
@@ -171,8 +171,11 @@ class TNStagingSystem:
         self.session_logger.log_analysis_start(report, self.backend)
         
         try:
-            # Run the workflow
-            results = await self.orchestrator.run_workflow(report)
+            # Initialize context with report
+            self.context_manager.context.context_R = report
+            
+            # Run the initial workflow (optimized)
+            results = await self.orchestrator.run_initial_workflow()
             
             # Get final context
             final_context = self.context_manager.get_context()
@@ -180,13 +183,13 @@ class TNStagingSystem:
             # Calculate duration
             duration = time.time() - start_time
             
-            # Check if workflow is paused for user query
-            if results.get("workflow_status") == "awaiting_user_response":
+            # Check if workflow is paused for user query (optimized workflow uses query_needed)
+            if results.get("query_needed") or results.get("workflow_status") == "awaiting_user_response":
                 # Query needed - return partial results with query
                 analysis_results = {
                     "success": True,
                     "query_needed": True,
-                    "query_question": results.get("query_question", final_context.context_Q),
+                    "query_question": results.get("query_question") or final_context.context_Q,
                     "t_stage": final_context.context_T,
                     "n_stage": final_context.context_N,
                     "t_confidence": final_context.context_CT,
@@ -223,6 +226,13 @@ class TNStagingSystem:
             
             # Log analysis completion
             self.session_logger.log_analysis_complete(analysis_results, duration)
+            
+            # Auto-save session for continuation (always save, regardless of query status)
+            try:
+                session_path = self.context_manager.save_session()
+                self.logger.debug(f"Session auto-saved to {session_path}")
+            except Exception as e:
+                self.logger.warning(f"Failed to auto-save session: {e}")
             
             # Log appropriate message based on analysis state
             if analysis_results.get("query_needed"):
@@ -263,7 +273,7 @@ class TNStagingSystem:
         # Log user interaction
         self.session_logger.log_user_interaction("query_response", {
             "response_length": len(response),
-            "response_preview": response[:200] + "..." if len(response) > 200 else response
+            "response_text": response  # Store full response, no truncation
         })
         
         self.logger.info("User response added to context")
@@ -391,7 +401,9 @@ class TNStagingSystem:
         Returns:
             Path where session was saved
         """
-        session_path = self.context_manager.save_session(filepath)
+        # Convert Path to string if provided
+        filepath_str = str(filepath) if filepath else None
+        session_path = self.context_manager.save_session(filepath_str)
         
         # Log session save
         self.session_logger.log_event("session_saved", {

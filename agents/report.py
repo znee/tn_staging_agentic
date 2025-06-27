@@ -24,12 +24,40 @@ class ReportAgent(BaseAgent):
         Returns:
             True if we can generate a report
         """
-        return (
+        # Log current context state for debugging
+        self.logger.debug(f"Report validation - R: {context.context_R is not None}, "
+                         f"B: {context.context_B is not None}, "
+                         f"T: {context.context_T}, N: {context.context_N}")
+        
+        # Check for required contexts - allow reports even with partial staging
+        has_basic_required = (
             context.context_R is not None and
-            context.context_B is not None and
-            context.context_T is not None and
+            context.context_B is not None
+        )
+        
+        has_staging = (
+            context.context_T is not None or
             context.context_N is not None
         )
+        
+        if not has_basic_required:
+            self.logger.error(f"Report agent validation failed - missing basic contexts: "
+                            f"R={context.context_R is not None}, "
+                            f"B={context.context_B is not None}")
+            return False
+        
+        if not has_staging:
+            self.logger.error(f"Report agent validation failed - no staging results: "
+                            f"T={context.context_T}, N={context.context_N}")
+            return False
+        
+        # Warn about partial staging but allow report generation
+        if context.context_T is None:
+            self.logger.warning(f"T staging missing, will use TX fallback")
+        if context.context_N is None:
+            self.logger.warning(f"N staging missing, will use NX fallback")
+        
+        return True
     
     async def process(self, context: AgentContext) -> AgentMessage:
         """Generate comprehensive TN staging report.
@@ -83,12 +111,12 @@ class ReportAgent(BaseAgent):
             "original_report": context.context_R,
             "body_part": context.context_B["body_part"],
             "cancer_type": context.context_B["cancer_type"],
-            "t_stage": context.context_T,
-            "n_stage": context.context_N,
-            "t_confidence": context.context_CT or 0.5,
-            "n_confidence": context.context_CN or 0.5,
-            "t_rationale": context.context_RationaleT or "Not provided",
-            "n_rationale": context.context_RationaleN or "Not provided",
+            "t_stage": context.context_T or "TX",  # Fallback for missing T staging
+            "n_stage": context.context_N or "NX",  # Fallback for missing N staging
+            "t_confidence": context.context_CT or 0.2,  # Low confidence for missing data
+            "n_confidence": context.context_CN or 0.2,  # Low confidence for missing data
+            "t_rationale": context.context_RationaleT or "T staging could not be determined",
+            "n_rationale": context.context_RationaleN or "N staging could not be determined",
             "user_response": context.context_RR,
             "session_id": context.metadata.get("session_id", "unknown"),
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")

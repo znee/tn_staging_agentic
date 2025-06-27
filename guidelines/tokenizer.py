@@ -70,12 +70,8 @@ class EnhancedPDFTokenizer:
     
     def _setup_logging(self):
         """Set up logging for tokenizer."""
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter(
-            '[%(asctime)s] [PDFTokenizer] %(levelname)s: %(message)s'
-        )
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
+        # Don't add handlers - they're managed by SessionLogger to avoid duplicates
+        # Just set the log level for this component
         self.logger.setLevel(logging.INFO)
     
     def process_pdf_directory(

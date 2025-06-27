@@ -84,12 +84,8 @@ class BaseAgent(ABC):
     
     def _setup_logging(self):
         """Set up agent-specific logging."""
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter(
-            f'[%(asctime)s] [{self.agent_id}] %(levelname)s: %(message)s'
-        )
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
+        # Don't add handlers - they're managed by SessionLogger to avoid duplicates
+        # Just set the log level for this agent
         self.logger.setLevel(logging.INFO)
     
     @abstractmethod
