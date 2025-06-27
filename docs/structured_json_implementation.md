@@ -1,8 +1,134 @@
 # Structured JSON Outputs Implementation
 
+**Date**: 2025-06-27  
+**Reference**: [Ollama Structured Outputs Blog](https://ollama.com/blog/structured-outputs)
+
 ## Overview
 
 The TN staging system has been enhanced with native structured JSON outputs using OpenAI's `response_format` and Ollama's `format` parameters. This eliminates JSON parsing errors and ensures reliable structured data extraction.
+
+## 📚 Ollama Structured Outputs Explained
+
+### How Ollama Structured Outputs Work
+
+According to the [Ollama blog post](https://ollama.com/blog/structured-outputs), Ollama now supports **native JSON schema enforcement** at the model level, similar to OpenAI's structured outputs.
+
+**Key Features:**
+- **JSON Schema Validation**: Models are constrained to produce valid JSON matching a provided schema
+- **Native Implementation**: Built into the Ollama runtime, not post-processing
+- **Format Parameter**: Use the `format` parameter with a JSON schema
+- **Model Compatibility**: Works with most modern models (Llama 3.2, Qwen, Mistral, etc.)
+
+**Example from Ollama Blog:**
+```python
+import ollama
+
+response = ollama.chat(
+    model='llama3.2',
+    messages=[{'role': 'user', 'content': 'Extract person info from: John Doe, 30 years old, lives in NYC'}],
+    format={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"},
+            "location": {"type": "string"}
+        },
+        "required": ["name", "age", "location"]
+    }
+)
+# Guaranteed to return valid JSON matching the schema
+```
+
+**Benefits Over Traditional Prompting:**
+- **100% Valid JSON**: No parsing errors or malformed responses
+- **Schema Enforcement**: Model output must match the exact structure
+- **Type Safety**: Automatic type validation (string, integer, array, etc.)
+- **Performance**: Faster than retry-based approaches
+
+## 📊 Before vs After Implementation
+
+### ❌ Previous Implementation (June 26, 2025)
+
+**Problems:**
+- Raw text responses from LLMs required manual JSON parsing
+- Frequent parsing errors when LLMs returned malformed JSON
+- Inconsistent response formats between different models
+- Error-prone string manipulation and fallback logic
+
+**Example Previous Code:**
+```python
+# Old approach - unreliable text parsing
+response = await self.llm_provider.generate(prompt)
+try:
+    # Manual JSON extraction and parsing
+    json_match = re.search(r'\{.*\}', response, re.DOTALL)
+    if json_match:
+        result = json.loads(json_match.group())
+    else:
+        # Fallback to text extraction
+        result = self._extract_from_text(response)
+except json.JSONDecodeError:
+    # Error handling for malformed JSON
+    return self._fallback_staging()
+```
+
+### ✅ Current Implementation (June 27, 2025)
+
+**Solutions:**
+- **Structured JSON outputs** using Ollama's `format` parameter and OpenAI's `response_format`
+- **Pydantic models** for type-safe response validation
+- **Guaranteed JSON format** from LLM providers
+- **Automatic error handling** at the provider level
+
+**Example Current Code:**
+```python
+# New approach - guaranteed structured output
+class StagingResult(BaseModel):
+    stage: str
+    confidence: float
+    rationale: str
+    extracted_info: Dict[str, Any]
+
+# Structured generation
+result = await self.llm_provider.generate_structured(
+    prompt=prompt,
+    response_model=StagingResult,
+    temperature=0.1
+)
+# result is automatically a valid StagingResult object
+```
+
+### Our Implementation vs Ollama Blog Example
+
+**Ollama Blog Approach (Simple):**
+```python
+# Direct schema in API call
+format_schema = {
+    "type": "object", 
+    "properties": {
+        "stage": {"type": "string"},
+        "confidence": {"type": "number"}
+    }
+}
+response = ollama.chat(model='qwen3:8b', format=format_schema, ...)
+```
+
+**Our Enhanced Approach (Production-Ready):**
+```python
+# Pydantic model for better validation and IDE support
+class TStagingResponse(BaseModel):
+    t_stage: str = Field(description="T stage classification")
+    confidence: float = Field(ge=0.0, le=1.0)
+    rationale: str = Field(min_length=10)
+
+# Automatic schema generation + validation
+schema = TStagingResponse.model_json_schema()
+response = await ollama_provider.generate_structured(
+    prompt=prompt,
+    response_model=TStagingResponse
+)
+# Returns validated TStagingResponse object
+```
 
 ## Current Status
 
