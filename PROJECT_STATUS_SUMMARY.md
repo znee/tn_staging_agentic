@@ -64,7 +64,7 @@ radiologic-tn-staging/
 ├── sessions/         # Session data (cleaned: 18 files remaining)
 ├── not_using/        # Archived/experimental code
 ├── tn_staging_api.py           # Core API
-├── tn_staging_gui_optimized.py # Production GUI
+├── tn_staging_gui.py # Production GUI
 ├── main.py                     # Main system
 └── CLAUDE.md                   # Complete documentation
 ```

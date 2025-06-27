@@ -22,7 +22,7 @@ The TN staging system was **creating new sessions** instead of **continuing exis
 **Result**: Zero JSON parsing errors in production logs
 
 ### 2. ✅ Session Continuation (Not Replacement)
-**Files**: `tn_staging_gui_optimized.py`
+**Files**: `tn_staging_gui.py`
 
 **Before** (Session Replacement):
 ```python
@@ -121,7 +121,7 @@ Skipping T staging re-run (current: T4, confidence: 0.95)
 - `config/llm_providers_structured.py` - Enhanced providers with JSON
 - `agents/staging_t_structured.py` - Structured T staging agent
 - `contexts/context_manager_optimized.py` - Selective re-staging logic  
-- `tn_staging_gui_optimized.py` - GUI with session continuation
+- `tn_staging_gui.py` - GUI with session continuation
 - `tests/test_workflow_optimization.py` - Optimization unit tests
 - `tests/test_structured_outputs.py` - JSON validation tests
 - `tests/test_workflow_integration.py` - End-to-end integration tests
@@ -140,7 +140,7 @@ Skipping T staging re-run (current: T4, confidence: 0.95)
 ### For Development/Testing
 ```bash
 # Use optimized GUI (recommended)
-streamlit run tn_staging_gui_optimized.py
+streamlit run tn_staging_gui.py
 
 # Test optimizations
 python tests/test_workflow_integration.py
@@ -149,7 +149,7 @@ python tests/test_structured_outputs.py
 
 ### For Production
 1. **Backup current system**
-2. **Replace GUI**: Use `tn_staging_gui_optimized.py`
+2. **Replace GUI**: Use `tn_staging_gui.py`
 3. **Main system**: Already integrated (uses optimized components)
 4. **Test thoroughly**: Run integration tests
 5. **Monitor logs**: Check for optimization metadata

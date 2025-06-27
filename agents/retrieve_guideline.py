@@ -6,7 +6,7 @@ from pathlib import Path
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
 
 class GuidelineRetrievalAgent(BaseAgent):
-    """Agent that retrieves relevant staging guidelines from vector store."""
+    """Agent that retrieves relevant staging guidelines from vector store with body part routing."""
     
     def __init__(self, llm_provider, vector_store_path: str = None):
         """Initialize guideline retrieval agent.
@@ -18,7 +18,209 @@ class GuidelineRetrievalAgent(BaseAgent):
         super().__init__("guideline_retrieval_agent", llm_provider)
         self.vector_store_path = vector_store_path or "faiss_stores/ajcc_guidelines"
         self.vector_store = None
+        self.body_part_store_mapping = self._initialize_body_part_mapping()
+        self.current_store_info = None  # Track which store is being used
         self._load_vector_store()
+    
+    def _initialize_body_part_mapping(self) -> Dict[str, str]:
+        """Initialize mapping of body parts to specialized vector stores.
+        
+        Returns:
+            Dictionary mapping body part names to store paths
+        """
+        # Current mapping based on available PDFs
+        # When new PDFs are added, extend this mapping
+        mapping = {
+            # Oral cavity and oropharyngeal cancers (current PDF)
+            "oral cavity": "oral_oropharyngeal",
+            "oropharynx": "oral_oropharyngeal", 
+            "oropharyngeal": "oral_oropharyngeal",
+            "mouth": "oral_oropharyngeal",
+            "tongue": "oral_oropharyngeal",
+            "floor of mouth": "oral_oropharyngeal",
+            "hard palate": "oral_oropharyngeal",
+            "soft palate": "oral_oropharyngeal",
+            "tonsil": "oral_oropharyngeal",
+            "base of tongue": "oral_oropharyngeal",
+            
+            # Future body parts - will use general store until specific PDFs added
+            # "lung": "lung",
+            # "breast": "breast", 
+            # "liver": "liver",
+            # "pancreas": "pancreas",
+            # etc.
+        }
+        
+        self.logger.debug(f"Initialized body part mapping with {len(mapping)} entries")
+        return mapping
+    
+    def _determine_store_path(self, body_part: str, cancer_type: str) -> Tuple[str, Dict[str, str]]:
+        """Determine which vector store to use based on body part and cancer type.
+        
+        Args:
+            body_part: Detected body part
+            cancer_type: Detected cancer type
+            
+        Returns:
+            Tuple of (store_path, store_info) where store_info contains routing metadata
+        """
+        store_info = {
+            "body_part": body_part,
+            "cancer_type": cancer_type,
+            "routing_strategy": "general",  # Default
+            "store_type": "general",
+            "specialized_available": False
+        }
+        
+        # Check if we have a specialized store for this body part
+        body_part_lower = body_part.lower() if body_part else ""
+        specialized_store = None
+        
+        for mapped_part, store_name in self.body_part_store_mapping.items():
+            if mapped_part in body_part_lower:
+                specialized_store = store_name
+                break
+        
+        if specialized_store:
+            # For oral/oropharyngeal, use the dedicated high-quality store
+            if specialized_store == "oral_oropharyngeal":
+                provider_type = getattr(self.llm_provider, 'provider_type', 'ollama')
+                if provider_type == 'openai' or hasattr(self.llm_provider, 'openai_client'):
+                    specialized_path = f"faiss_stores/oral_oropharyngeal_openai"
+                else:
+                    specialized_path = f"faiss_stores/oral_oropharyngeal_local"
+                
+                # Check if the high-quality specialized store exists
+                if Path(specialized_path).exists():
+                    store_info.update({
+                        "routing_strategy": "specialized",
+                        "store_type": "specialized", 
+                        "specialized_available": True,
+                        "specialized_store": specialized_store,
+                        "routing_note": "Using dedicated high-quality oral/oropharyngeal store"
+                    })
+                    self.logger.info(f"🎯 Using specialized store for {body_part}: {specialized_path}")
+                    return specialized_path, store_info
+                else:
+                    # Fallback to main store if specialized store not found
+                    provider_type = getattr(self.llm_provider, 'provider_type', 'ollama')
+                    if provider_type == 'openai' or hasattr(self.llm_provider, 'openai_client'):
+                        fallback_path = self.vector_store_path + "_openai"
+                    else:
+                        fallback_path = self.vector_store_path + "_local"
+                    
+                    store_info.update({
+                        "routing_strategy": "fallback_to_main",
+                        "store_type": "fallback", 
+                        "specialized_available": False,
+                        "specialized_store": specialized_store,
+                        "routing_note": "Specialized store not found, using main store as fallback"
+                    })
+                    self.logger.warning(f"⚠️  Specialized store not found: {specialized_path}, falling back to main store")
+                    return fallback_path, store_info
+            
+            # For future body parts, check if dedicated store exists
+            else:
+                specialized_path = f"faiss_stores/{specialized_store}"
+                provider_type = getattr(self.llm_provider, 'provider_type', 'ollama')
+                
+                if provider_type == 'openai' or hasattr(self.llm_provider, 'openai_client'):
+                    specialized_path += "_openai"
+                else:
+                    specialized_path += "_local"
+                
+                if Path(specialized_path).exists():
+                    store_info.update({
+                        "routing_strategy": "specialized",
+                        "store_type": "specialized", 
+                        "specialized_available": True,
+                        "specialized_store": specialized_store
+                    })
+                    self.logger.info(f"🎯 Using specialized store for {body_part}: {specialized_path}")
+                    return specialized_path, store_info
+                else:
+                    self.logger.warning(f"⚠️  Specialized store not found: {specialized_path}, falling back to general")
+                    store_info.update({
+                        "specialized_available": False,
+                        "routing_note": f"Specialized store for {specialized_store} not yet built"
+                    })
+        
+        # Fall back to general store
+        provider_type = getattr(self.llm_provider, 'provider_type', 'ollama')
+        if provider_type == 'openai' or hasattr(self.llm_provider, 'openai_client'):
+            general_path = self.vector_store_path + "_openai"
+        else:
+            general_path = self.vector_store_path + "_local"
+        
+        self.logger.info(f"📚 Using general store for {body_part}: {general_path}")
+        return general_path, store_info
+    
+    def _load_specific_vector_store(self, store_path: str, store_info: Dict[str, str]):
+        """Load a specific vector store based on routing decision.
+        
+        Args:
+            store_path: Path to the vector store to load
+            store_info: Store routing metadata
+        """
+        try:
+            from langchain_community.vectorstores import FAISS
+            from langchain_openai import OpenAIEmbeddings
+            
+            try:
+                from langchain_ollama import OllamaEmbeddings
+            except ImportError:
+                from langchain_community.embeddings import OllamaEmbeddings
+            
+            # Determine embedding provider
+            provider_type = getattr(self.llm_provider, 'provider_type', 'ollama')
+            
+            if provider_type == 'openai' or hasattr(self.llm_provider, 'openai_client'):
+                embeddings = OpenAIEmbeddings()
+            else:
+                embeddings = OllamaEmbeddings(
+                    model="nomic-embed-text:latest",
+                    base_url="http://localhost:11434"
+                )
+            
+            self.logger.info(f"📂 LOADING VECTOR STORE: {store_path}")
+            
+            if Path(store_path).exists():
+                self.vector_store = FAISS.load_local(
+                    store_path, 
+                    embeddings, 
+                    allow_dangerous_deserialization=True
+                )
+                self.current_store_info = store_info
+                
+                # Test the loaded store
+                test_docs = self.vector_store.similarity_search("test query", k=1)
+                
+                # Enhanced logging for store type visibility
+                if store_info['store_type'] == 'specialized':
+                    self.logger.info(f"🎯 ✅ SPECIALIZED STORE LOADED: {store_info.get('specialized_store', 'unknown')}")
+                    self.logger.info(f"   Body Part: {store_info.get('body_part', 'unknown')}")
+                    self.logger.info(f"   Test Results: {len(test_docs)} documents found")
+                    self.logger.info(f"   Store Quality: High-quality cancer-specific")
+                else:
+                    self.logger.info(f"📚 ✅ GENERAL STORE LOADED (fallback)")
+                    self.logger.info(f"   Body Part: {store_info.get('body_part', 'unknown')}")
+                    self.logger.info(f"   Test Results: {len(test_docs)} documents found")
+                    self.logger.info(f"   Store Quality: General purpose")
+                
+                # Store summary info
+                if hasattr(self.vector_store, 'index') and hasattr(self.vector_store.index, 'ntotal'):
+                    doc_count = self.vector_store.index.ntotal
+                    self.logger.info(f"📊 Vector store contains {doc_count} total documents")
+                    
+            else:
+                self.logger.error(f"Vector store not found: {store_path}")
+                self.vector_store = None
+                self.current_store_info = None
+                
+        except Exception as e:
+            self.logger.error(f"Failed to load vector store {store_path}: {str(e)}")
+            self.vector_store = None
+            self.current_store_info = None
     
     def _load_vector_store(self):
         """Load vector store for guideline retrieval."""
@@ -143,7 +345,7 @@ class GuidelineRetrievalAgent(BaseAgent):
         )
     
     async def process(self, context: AgentContext) -> AgentMessage:
-        """Retrieve relevant guidelines for T and N staging.
+        """Retrieve relevant guidelines for T and N staging with store routing.
         
         Args:
             context: Current agent context
@@ -154,6 +356,24 @@ class GuidelineRetrievalAgent(BaseAgent):
         body_part = context.context_B["body_part"]
         cancer_type = context.context_B["cancer_type"]
         case_report = context.context_R  # Get the original case report for semantic retrieval
+        
+        # Determine appropriate vector store based on body part/cancer type
+        target_store_path, store_info = self._determine_store_path(body_part, cancer_type)
+        
+        # Enhanced logging for store selection visibility
+        self.logger.info(f"🔍 VECTOR STORE SELECTION for {body_part} ({cancer_type}):")
+        self.logger.info(f"   Strategy: {store_info['routing_strategy']}")
+        self.logger.info(f"   Store Type: {store_info['store_type']}")
+        self.logger.info(f"   Store Path: {target_store_path}")
+        if store_info.get('specialized_store'):
+            self.logger.info(f"   Specialized Store: {store_info['specialized_store']}")
+        
+        # Load the appropriate vector store if different from current
+        if not self.vector_store or self.current_store_info != store_info:
+            self.logger.info(f"🔄 Loading vector store (current store different or not loaded)")
+            self._load_specific_vector_store(target_store_path, store_info)
+        else:
+            self.logger.info(f"♻️  Reusing already loaded vector store")
         
         # Retrieve guidelines using enhanced semantic approach
         t_guidelines = await self._retrieve_t_guidelines_semantic(body_part, cancer_type, case_report)
@@ -170,7 +390,10 @@ class GuidelineRetrievalAgent(BaseAgent):
                 metadata={
                     "retrieval_method": "vector_store" if self.vector_store else "fallback",
                     "body_part": body_part,
-                    "cancer_type": cancer_type
+                    "cancer_type": cancer_type,
+                    "store_routing": store_info,  # Pass routing info to session
+                    "store_path": target_store_path,
+                    "guideline_source": store_info.get("specialized_store", "general")
                 }
             )
         else:
@@ -178,7 +401,11 @@ class GuidelineRetrievalAgent(BaseAgent):
                 agent_id=self.agent_id,
                 status=AgentStatus.FAILED,
                 data={},
-                error=f"Could not retrieve guidelines for {cancer_type} of {body_part}"
+                error=f"Could not retrieve guidelines for {cancer_type} of {body_part}",
+                metadata={
+                    "store_routing": store_info,
+                    "store_path": target_store_path
+                }
             )
     
     async def _retrieve_t_guidelines(self, body_part: str, cancer_type: str) -> Optional[str]:
@@ -378,6 +605,15 @@ Respond with ONLY the summary sentence, no explanations."""
         """
         if not self.vector_store:
             return await self._llm_fallback_guidelines("T", body_part, cancer_type)
+        
+        # Log which store is being used for retrieval
+        store_type = self.current_store_info.get('store_type', 'unknown') if self.current_store_info else 'unknown'
+        specialized_store = self.current_store_info.get('specialized_store') if self.current_store_info else None
+        
+        if store_type == 'specialized' and specialized_store:
+            self.logger.info(f"🔍 T-STAGING RETRIEVAL using SPECIALIZED store: {specialized_store}")
+        else:
+            self.logger.info(f"🔍 T-STAGING RETRIEVAL using GENERAL store (fallback)")
             
         try:
             # Extract case characteristics for semantic matching
@@ -462,6 +698,15 @@ Respond with ONLY the summary sentence, no explanations."""
         """
         if not self.vector_store:
             return await self._llm_fallback_guidelines("N", body_part, cancer_type)
+        
+        # Log which store is being used for retrieval
+        store_type = self.current_store_info.get('store_type', 'unknown') if self.current_store_info else 'unknown'
+        specialized_store = self.current_store_info.get('specialized_store') if self.current_store_info else None
+        
+        if store_type == 'specialized' and specialized_store:
+            self.logger.info(f"🔍 N-STAGING RETRIEVAL using SPECIALIZED store: {specialized_store}")
+        else:
+            self.logger.info(f"🔍 N-STAGING RETRIEVAL using GENERAL store (fallback)")
             
         try:
             # Extract case characteristics for semantic matching

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TN Staging GUI - Fixed Threading Issues"""
+"""TN Staging GUI - Optimized with Session Continuation"""
 
 import os
 import sys
@@ -28,15 +28,21 @@ st.set_page_config(
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-class TNStagingGUI:
-    """Streamlit GUI that uses the core API via subprocess."""
+class OptimizedTNStagingGUI:
+    """Streamlit GUI with session continuation optimization."""
     
     def __init__(self):
-        self.api_script = Path(__file__).parent / "tn_staging_api.py"
-        self.python_exe = sys.executable
+        # Instead of subprocess calls, maintain persistent API connection
+        self.api_instances = {}  # Store API instances by session ID
+        self._initialize_session_state()
+    
+    def _initialize_session_state(self):
+        """Initialize Streamlit session state."""
+        if 'api_instances' not in st.session_state:
+            st.session_state.api_instances = {}
     
     def call_api(self, command: str, **kwargs) -> Dict[str, Any]:
-        """Call the core API via subprocess.
+        """Call the core API using direct imports instead of subprocess.
         
         Args:
             command: API command to run
@@ -46,133 +52,109 @@ class TNStagingGUI:
             API response as dictionary
         """
         try:
-            cmd = [self.python_exe, str(self.api_script), "--json"]
+            backend = kwargs.get("backend", "ollama")
+            session_id = kwargs.get("session_id")
             
-            # Add backend
-            if "backend" in kwargs:
-                cmd.extend(["--backend", kwargs["backend"]])
-            
-            # Add debug
-            if kwargs.get("debug"):
-                cmd.append("--debug")
-            
-            # Add command-specific args
+            # Handle different commands
             if command == "status":
-                cmd.append("--status")
+                from tn_staging_api import TNStagingAPI
+                api = TNStagingAPI(backend=backend)
+                return api.check_backend_status()
+                
             elif command == "info":
-                cmd.append("--info")
+                from tn_staging_api import TNStagingAPI
+                api = TNStagingAPI(backend=backend)
+                return api.get_system_info()
+                
             elif command == "analyze":
-                if "report" in kwargs:
-                    # Ensure report text is properly passed
-                    report_text = kwargs["report"]
-                    if report_text:
-                        cmd.extend(["--report", report_text])
+                report_text = kwargs.get("report")
+                if not report_text:
+                    return {"success": False, "error": "No report provided"}
+                
+                # Create new API instance for analysis
+                from tn_staging_api import TNStagingAPI
+                api = TNStagingAPI(backend=backend)
+                
+                # Run analysis
+                result = api.analyze_report_sync(report_text)
+                
+                # Store API instance for potential continuation
+                if result.get("success") and result.get("session_id"):
+                    session_id = result["session_id"]
+                    st.session_state.api_instances[session_id] = api
+                
+                return result
+                
             elif command == "continue":
-                if "session_id" in kwargs and "user_response" in kwargs:
-                    cmd.extend([
-                        "--continue-session", kwargs["session_id"],
-                        "--user-response", kwargs["user_response"]
-                    ])
-            
-            # Run command
-            result = subprocess.run(
-                cmd, 
-                capture_output=True, 
-                text=True, 
-                timeout=900  # 15 minute timeout
-            )
-            
-            if result.returncode == 0:
-                # Parse JSON output (skip any progress messages)
-                stdout = result.stdout.strip()
+                session_id = kwargs.get("session_id")
+                user_response = kwargs.get("user_response")
                 
-                # Try to find JSON block in output
-                json_response = None
+                if not session_id or not user_response:
+                    return {"success": False, "error": "Missing session_id or user_response"}
                 
-                # Method 1: Look for complete JSON block from the end
-                lines = stdout.split('\n')
-                json_lines = []
-                in_json = False
-                brace_count = 0
-                
-                for line in reversed(lines):
-                    line = line.strip()
-                    if line.endswith('}') and not in_json:
-                        # Start of JSON block (reading backwards)
-                        in_json = True
-                        json_lines.insert(0, line)
-                        brace_count = line.count('}') - line.count('{')
-                    elif in_json:
-                        json_lines.insert(0, line)
-                        brace_count += line.count('}') - line.count('{')
-                        if brace_count == 0 and line.startswith('{'):
-                            # Complete JSON block found
-                            json_response = '\n'.join(json_lines)
-                            break
-                
-                # Method 2: Try parsing each line that looks like JSON
-                if not json_response:
-                    for line in reversed(lines):
-                        line = line.strip()
-                        if line.startswith('{') and line.endswith('}'):
-                            try:
-                                json.loads(line)
-                                json_response = line
-                                break
-                            except json.JSONDecodeError:
-                                continue
-                
-                # Method 3: Look for JSON after "Starting analysis..." marker
-                if not json_response:
-                    start_marker = "Starting analysis..."
-                    if start_marker in stdout:
-                        after_marker = stdout.split(start_marker, 1)[1].strip()
-                        try:
-                            json_response = after_marker
-                            json.loads(json_response)  # Validate
-                        except json.JSONDecodeError:
-                            pass
-                
-                if json_response:
-                    try:
-                        return json.loads(json_response)
-                    except json.JSONDecodeError as e:
-                        return {
-                            "success": False, 
-                            "error": f"JSON parsing failed: {e}", 
-                            "stdout": stdout,
-                            "attempted_json": json_response[:500]
-                        }
+                # Get existing API instance
+                if session_id in st.session_state.api_instances:
+                    api = st.session_state.api_instances[session_id]
+                    return api.continue_analysis_sync(session_id, user_response)
                 else:
-                    return {"success": False, "error": "No JSON response found", "stdout": stdout}
-            else:
-                return {
-                    "success": False, 
-                    "error": result.stderr or "Command failed",
-                    "stdout": result.stdout,
-                    "returncode": result.returncode
-                }
+                    return {
+                        "success": False, 
+                        "error": f"Session {session_id} not found in current GUI session"
+                    }
+            
+            elif command == "analyze_selective":
+                # Selective analysis with preserved contexts
+                report_text = kwargs.get("report")
+                preserved_contexts = kwargs.get("preserved_contexts", {})
                 
-        except subprocess.TimeoutExpired:
-            return {"success": False, "error": "Analysis timed out (15 minutes)"}
+                if not report_text:
+                    return {"success": False, "error": "No report provided"}
+                
+                # Create new API instance for selective analysis
+                from tn_staging_api import TNStagingAPI
+                api = TNStagingAPI(backend=backend)
+                
+                # Use the new selective preservation method
+                result = api.analyze_with_selective_preservation_sync(report_text, preserved_contexts)
+                
+                # Store API instance for potential continuation
+                if result.get("success") and result.get("session_id"):
+                    session_id = result["session_id"]
+                    st.session_state.api_instances[session_id] = api
+                
+                return result
+            
+            else:
+                return {"success": False, "error": f"Unknown command: {command}"}
+                
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {
+                "success": False,
+                "error": f"API call failed: {str(e)}",
+                "command": command
+            }
 
 def initialize_session_state():
     """Initialize session state variables."""
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
     if "backend" not in st.session_state:
-        st.session_state.backend = os.getenv("TN_STAGING_BACKEND", "ollama")
+        st.session_state.backend = "ollama"
+    if "current_session_id" not in st.session_state:
+        st.session_state.current_session_id = None
     if "pending_analysis" not in st.session_state:
         st.session_state.pending_analysis = None
     if "pending_query_response" not in st.session_state:
         st.session_state.pending_query_response = None
-    if "current_session_id" not in st.session_state:
-        st.session_state.current_session_id = None
 
-def add_chat_message(role: str, content: str, metadata: Optional[Dict] = None):
-    """Add a message to the chat history."""
+def add_chat_message(role: str, content: str, metadata: Dict[str, Any] = None):
+    """Add a message to chat history.
+    
+    Args:
+        role: Message role ("user", "assistant", "system")
+        content: Message content
+        metadata: Optional metadata
+    """
     message = {
         "role": role,
         "content": content,
@@ -183,20 +165,20 @@ def add_chat_message(role: str, content: str, metadata: Optional[Dict] = None):
 
 def display_chat_history():
     """Display the chat history."""
-    for i, message in enumerate(st.session_state.chat_history):
-        role = message["role"]
-        content = message["content"]
-        timestamp = message["timestamp"]
-        metadata = message.get("metadata", {})
+    for msg in st.session_state.chat_history:
+        role = msg["role"]
+        content = msg["content"]
+        timestamp = msg["timestamp"]
         
         if role == "user":
             with st.chat_message("user"):
-                st.markdown(f"**User** · {timestamp}")
-                if metadata.get("type") == "report":
-                    with st.expander("📄 Radiologic Report", expanded=False):
-                        st.text_area("Report Content", content, height=150, disabled=True, key=f"report_{i}")
-                else:
+                st.markdown(f"**Report** · {timestamp}")
+                if msg["metadata"].get("type") == "query_response":
+                    st.markdown("**Response to question:**")
                     st.markdown(content)
+                else:
+                    with st.expander("Show full report", expanded=False):
+                        st.text(content)
                     
         elif role == "assistant":
             with st.chat_message("assistant"):
@@ -223,12 +205,14 @@ def display_chat_history():
                             col1, col2 = st.columns(2)
                             with col1:
                                 st.metric("T Stage", content.get("t_stage", "Unknown"))
-                                if "t_confidence" in content:
-                                    st.metric("T Confidence", f"{content['t_confidence']:.1%}")
+                                t_conf = content.get("t_confidence")
+                                if t_conf is not None:
+                                    st.metric("T Confidence", f"{t_conf:.1%}")
                             with col2:
                                 st.metric("N Stage", content.get("n_stage", "Unknown"))
-                                if "n_confidence" in content:
-                                    st.metric("N Confidence", f"{content['n_confidence']:.1%}")
+                                n_conf = content.get("n_confidence")
+                                if n_conf is not None:
+                                    st.metric("N Confidence", f"{n_conf:.1%}")
                             
                             st.markdown(f"**Combined Stage**: {content.get('tn_stage', 'Unknown')}")
                             
@@ -244,6 +228,25 @@ def display_chat_history():
                             if content.get('n_rationale'):
                                 with st.expander("N Staging Rationale"):
                                     st.markdown(content['n_rationale'])
+                                    
+                            # Show optimization info if available
+                            if 'workflow_optimization' in content.get('metadata', {}):
+                                with st.expander("🚀 Workflow Optimization"):
+                                    opt_info = content['metadata']['workflow_optimization']
+                                    st.json(opt_info)
+                            
+                            # Show context transfer info if available
+                            optimization_types = ['selective_preservation', 'partial_preservation', 'full_reanalysis', 'basic_session_transfer']
+                            if content.get('metadata', {}).get('optimization_used') in optimization_types:
+                                with st.expander("🔄 Context Transfer Details"):
+                                    transfer_info = {
+                                        "approach": content['metadata'].get('approach'),
+                                        "original_session_id": content['metadata'].get('original_session_id'),
+                                        "preservation_decisions": content['metadata'].get('preservation_decisions', {}),
+                                        "previous_context": content['metadata'].get('previous_context', {}),
+                                        "limitations": content['metadata'].get('context_limitation')
+                                    }
+                                    st.json(transfer_info)
                                     
                             # Show metadata
                             with st.expander("Analysis Details"):
@@ -270,11 +273,11 @@ def display_chat_history():
 def main():
     """Main application."""
     initialize_session_state()
-    gui = TNStagingGUI()
+    gui = OptimizedTNStagingGUI()
     
     # Header
-    st.title("🩺 TN Staging Analysis System")
-    st.markdown("**Guideline-based cancer staging with conversation history**")
+    st.title("🩺 TN Staging Analysis System (Optimized)")
+    st.markdown("**Guideline-based cancer staging with session transfer optimization**")
     
     # Sidebar
     with st.sidebar:
@@ -334,22 +337,50 @@ def main():
         elif st.session_state.pending_query_response:
             st.warning("⏳ Processing response...")
         
-        # Check for pending queries
+        # Check for pending queries - FIXED LOGIC
         has_pending_query = False
         if st.session_state.chat_history:
             for msg in reversed(st.session_state.chat_history):
                 if (msg["role"] == "assistant" and 
-                    isinstance(msg["content"], dict) and 
-                    msg["content"].get("query_needed")):
-                    has_pending_query = True
-                    break
-                elif (msg["role"] == "assistant" and 
-                      isinstance(msg["content"], dict) and 
-                      not msg["content"].get("query_needed")):
-                    break
+                    isinstance(msg["content"], dict)):
+                    
+                    # Check if this message has a query
+                    if msg["content"].get("query_needed"):
+                        has_pending_query = True
+                        break
+                    
+                    # If this is a successful analysis without query_needed, check if it's final
+                    elif (msg["content"].get("success") and 
+                          not msg["content"].get("query_needed") and 
+                          msg["content"].get("tn_stage")):  # Has final TN stage
+                        # This is a completed final analysis, no pending query
+                        break
         
         if has_pending_query:
             st.info("💭 Waiting for your response")
+        
+        # Optimization info
+        st.markdown("---")
+        st.header("🚀 Optimizations")
+        st.info("✅ Session Transfer")
+        st.info("✅ Enhanced Reporting")
+        st.info("✅ Structured JSON")
+        
+        # Debug mode toggle
+        debug_mode = st.checkbox("🐛 Debug Mode", help="Show API responses and internal states")
+        
+        if debug_mode and st.session_state.chat_history:
+            with st.expander("🔍 Latest API Response"):
+                latest_assistant_msg = None
+                for msg in reversed(st.session_state.chat_history):
+                    if msg["role"] == "assistant":
+                        latest_assistant_msg = msg
+                        break
+                
+                if latest_assistant_msg:
+                    st.json(latest_assistant_msg["content"])
+                else:
+                    st.write("No assistant messages yet")
         
         if st.button("🗑️ Clear History"):
             st.session_state.chat_history = []
@@ -374,28 +405,35 @@ def main():
         # Input area
         st.subheader("📝 New Analysis")
         
-        # Check if we have a pending query
+        # Check if we have a pending query - FIXED LOGIC
         has_pending_query = False
         latest_query = None
         
         if st.session_state.chat_history:
             for msg in reversed(st.session_state.chat_history):
                 if (msg["role"] == "assistant" and 
-                    isinstance(msg["content"], dict) and 
-                    msg["content"].get("query_needed")):
-                    has_pending_query = True
-                    latest_query = msg["content"]
-                    break
-                elif (msg["role"] == "assistant" and 
-                      isinstance(msg["content"], dict) and 
-                      not msg["content"].get("query_needed")):
-                    # Found a completed analysis, no pending query
-                    break
+                    isinstance(msg["content"], dict)):
+                    
+                    # Check if this message has a query
+                    if msg["content"].get("query_needed"):
+                        has_pending_query = True
+                        latest_query = msg["content"]
+                        break
+                    
+                    # If this is a successful analysis without query_needed, check if it's final
+                    elif (msg["content"].get("success") and 
+                          not msg["content"].get("query_needed") and 
+                          msg["content"].get("tn_stage")):  # Has final TN stage
+                        # This is a completed final analysis, no pending query
+                        break
         
         if has_pending_query and latest_query:
             # Show query response interface
             st.info("💭 **Waiting for your response to continue analysis**")
             st.write(f"**Question:** {latest_query.get('query_question', 'No question available')}")
+            
+            # Show optimization note
+            st.success("🚀 **Please add responses about question(s).**")
             
             query_response = st.text_area(
                 "Your response:",
@@ -408,14 +446,15 @@ def main():
             
             if st.button("📤 Submit Response", type="primary", disabled=not can_respond):
                 if query_response.strip():
-                    # Store the response for processing
+                    # Store the response for processing using SESSION TRANSFER
                     st.session_state.pending_query_response = {
                         "response": query_response,
                         "session_id": latest_query.get("session_id"),
-                        "backend": latest_query.get("backend", st.session_state.backend)
+                        "backend": latest_query.get("backend", st.session_state.backend),
+                        "use_transfer": True  # Session transfer approach
                     }
                     add_chat_message("user", query_response, {"type": "query_response"})
-                    add_chat_message("system", "🔄 Continuing analysis with your response...")
+                    add_chat_message("system", "🚀 Creating enhanced report with your response...")
                     st.rerun()
             
             st.markdown("---")
@@ -476,38 +515,197 @@ def main():
             add_chat_message("assistant", result)
             st.rerun()
         
-        # Check if we need to process query response
+        # Check if we need to process query response with SESSION CONTINUATION
         if st.session_state.pending_query_response:
             query_data = st.session_state.pending_query_response
             st.session_state.pending_query_response = None  # Clear pending
             
-            # Show progress and continue analysis
-            with st.spinner("Re-analyzing with additional information..."):
+            # Show progress and continue analysis using SESSION TRANSFER approach
+            with st.spinner("Re-analyzing with enhanced report (session transfer)..."):
                 progress_bar = st.progress(0, "Processing response...")
                 
-                # Find the original report from chat history
+                # Always use SESSION TRANSFER approach for reliability
+                progress_bar.progress(30, "Extracting all contexts from previous session...")
+                
+                # Find the original report and previous analysis results from chat history
                 original_report = None
+                previous_analysis = None
+                
                 for msg in st.session_state.chat_history:
                     if (msg["role"] == "user" and 
                         msg["metadata"].get("type") == "report"):
                         original_report = msg["content"]
+                    elif (msg["role"] == "assistant" and 
+                          isinstance(msg["content"], dict) and 
+                          msg["content"].get("query_needed")):
+                        previous_analysis = msg["content"]
                         break
                 
-                if original_report:
-                    # Create enhanced report with user response
+                if original_report and previous_analysis:
+                    progress_bar.progress(50, "Creating selective context transfer report...")
+                    
+                    # Determine which staging results should be preserved vs re-analyzed
+                    t_confidence = previous_analysis.get('t_confidence', 0.0)
+                    n_confidence = previous_analysis.get('n_confidence', 0.0)
+                    t_stage = previous_analysis.get('t_stage', 'TX')
+                    n_stage = previous_analysis.get('n_stage', 'NX')
+                    
+                    # Decision logic for what to preserve
+                    # TX/NX stages should NEVER be preserved regardless of confidence
+                    preserve_t = t_stage not in ["TX", None] and t_confidence >= 0.7
+                    preserve_n = n_stage not in ["NX", None] and n_confidence >= 0.7
+                    
+                    # Check for ongoing TX/NX scenarios
+                    is_tx_scenario = t_stage == "TX"
+                    is_nx_scenario = n_stage == "NX"
+                    current_round = previous_analysis.get('round_number', 1)
+                    
+                    # Debug logging for preservation decisions
+                    st.write(f"🔍 **Preservation Analysis (Round {current_round + 1}):**")
+                    st.write(f"- T Stage: {t_stage} (confidence: {t_confidence:.1%}) → {'✅ Preserve' if preserve_t else ('🔄 Re-analyze (TX)' if is_tx_scenario else '🔄 Re-analyze')}")
+                    st.write(f"- N Stage: {n_stage} (confidence: {n_confidence:.1%}) → {'✅ Preserve' if preserve_n else ('🔄 Re-analyze (NX)' if is_nx_scenario else '🔄 Re-analyze')}")
+                    
+                    if is_tx_scenario or is_nx_scenario:
+                        st.warning(f"⚠️ **Ongoing TX/NX Resolution** - This is round {current_round + 1} of iterative staging")
+                    
+                    # Create selective enhancement guidance
+                    staging_guidance = []
+                    if preserve_t:
+                        staging_guidance.append(f"PRESERVE T STAGING: {t_stage} (confidence: {t_confidence:.1%}) - high confidence result from previous analysis")
+                    else:
+                        staging_guidance.append(f"RE-ANALYZE T STAGING: Previous result {t_stage} (confidence: {t_confidence:.1%}) needs review with new information")
+                    
+                    if preserve_n:
+                        staging_guidance.append(f"PRESERVE N STAGING: {n_stage} (confidence: {n_confidence:.1%}) - high confidence result from previous analysis")
+                    else:
+                        staging_guidance.append(f"RE-ANALYZE N STAGING: Previous result {n_stage} (confidence: {n_confidence:.1%}) needs review with new information")
+                    
+                    # Create a more natural enhanced report
                     enhanced_report = f"""{original_report}
 
-ADDITIONAL INFORMATION PROVIDED BY USER:
+ADDITIONAL CLINICAL INFORMATION PROVIDED:
 {query_data["response"]}"""
                     
-                    progress_bar.progress(50, "Re-analyzing with enhanced report...")
+                    # Decide on analysis approach based on preservation logic
+                    if preserve_t and preserve_n:
+                        # Both can be preserved - minimal re-analysis needed
+                        progress_bar.progress(70, "Preserving high-confidence results, minimal re-analysis...")
+                        preserved_contexts = {
+                            "body_part": previous_analysis.get('body_part'),
+                            "cancer_type": previous_analysis.get('cancer_type'),
+                            "t_stage": t_stage,
+                            "n_stage": n_stage,
+                            "t_confidence": t_confidence,
+                            "n_confidence": n_confidence,
+                            "t_rationale": previous_analysis.get('t_rationale'),
+                            "n_rationale": previous_analysis.get('n_rationale'),
+                            # Include guidelines if available from workflow metadata
+                            "t_guidelines": previous_analysis.get('workflow_summary', {}).get('t_guidelines'),
+                            "n_guidelines": previous_analysis.get('workflow_summary', {}).get('n_guidelines'),
+                            # Pass round tracking for multi-round scenarios
+                            "round_number": current_round
+                        }
+                        result = gui.call_api("analyze_selective",
+                                            report=enhanced_report,
+                                            preserved_contexts=preserved_contexts,
+                                            backend=query_data["backend"])
+                    else:
+                        # Need full or partial re-analysis
+                        if preserve_t:
+                            progress_bar.progress(70, "Preserving T staging, re-analyzing N staging...")
+                        elif preserve_n:
+                            progress_bar.progress(70, "Preserving N staging, re-analyzing T staging...")
+                        else:
+                            progress_bar.progress(70, "Re-analyzing both T and N staging...")
+                        
+                        # Implement partial preservation - preserve what we can
+                        preserved_contexts = {
+                            "body_part": previous_analysis.get('body_part'),
+                            "cancer_type": previous_analysis.get('cancer_type'),
+                            # Include guidelines if available from workflow metadata
+                            "t_guidelines": previous_analysis.get('workflow_summary', {}).get('t_guidelines'),
+                            "n_guidelines": previous_analysis.get('workflow_summary', {}).get('n_guidelines'),
+                            # Pass round tracking for multi-round scenarios
+                            "round_number": current_round
+                        }
+                        
+                        # Add T staging if it can be preserved
+                        if preserve_t:
+                            preserved_contexts.update({
+                                "t_stage": t_stage,
+                                "t_confidence": t_confidence,
+                                "t_rationale": previous_analysis.get('t_rationale')
+                            })
+                        
+                        # Add N staging if it can be preserved
+                        if preserve_n:
+                            preserved_contexts.update({
+                                "n_stage": n_stage,
+                                "n_confidence": n_confidence,
+                                "n_rationale": previous_analysis.get('n_rationale')
+                            })
+                        
+                        # Use selective preservation for partial scenarios too
+                        result = gui.call_api("analyze_selective",
+                                            report=enhanced_report,
+                                            preserved_contexts=preserved_contexts,
+                                            backend=query_data["backend"])
                     
-                    # Run new analysis with enhanced report
+                    # Add session transfer metadata
+                    if result.get("success"):
+                        result["metadata"] = result.get("metadata", {})
+                        
+                        if preserve_t and preserve_n:
+                            result["metadata"]["optimization_used"] = "selective_preservation"
+                            result["metadata"]["approach"] = "both_stages_preserved"
+                        elif preserve_t or preserve_n:
+                            result["metadata"]["optimization_used"] = "partial_preservation"
+                            result["metadata"]["approach"] = f"{'t' if preserve_t else 'n'}_stage_preserved"
+                        else:
+                            result["metadata"]["optimization_used"] = "full_reanalysis"
+                            result["metadata"]["approach"] = "both_stages_reanalyzed"
+                        
+                        result["metadata"]["user_response_integrated"] = True
+                        result["metadata"]["original_session_id"] = query_data.get("session_id")
+                        result["metadata"]["preservation_decisions"] = {
+                            "t_preserved": preserve_t,
+                            "n_preserved": preserve_n,
+                            "t_confidence": t_confidence,
+                            "n_confidence": n_confidence
+                        }
+                        result["metadata"]["previous_context"] = {
+                            "body_part": previous_analysis.get('body_part'),
+                            "cancer_type": previous_analysis.get('cancer_type'),
+                            "t_stage": t_stage,
+                            "n_stage": n_stage,
+                            "query_question": previous_analysis.get('query_question')
+                        }
+                elif original_report:
+                    # Fallback: only original report found, no previous analysis context
+                    progress_bar.progress(50, "Creating basic enhanced report...")
+                    
+                    enhanced_report = f"""{original_report}
+
+ADDITIONAL CLINICAL INFORMATION PROVIDED:
+{query_data["response"]}"""
+                    
+                    progress_bar.progress(70, "Starting fresh analysis with basic context transfer...")
+                    
                     result = gui.call_api("analyze", 
                                         report=enhanced_report,
                                         backend=query_data["backend"])
+                    
+                    # Add basic session transfer metadata
+                    if result.get("success"):
+                        result["metadata"] = result.get("metadata", {})
+                        result["metadata"]["optimization_used"] = "basic_session_transfer"
+                        result["metadata"]["approach"] = "fresh_session_with_basic_context"
+                        result["metadata"]["user_response_integrated"] = True
+                        result["metadata"]["original_session_id"] = query_data.get("session_id")
+                        result["metadata"]["context_limitation"] = "previous_analysis_context_not_found"
+                        
                 else:
-                    # Fallback if original report not found
+                    # Error case - no original report found
                     result = {
                         "success": False,
                         "error": "Could not find original report to enhance. Please start a new analysis.",

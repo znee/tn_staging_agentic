@@ -98,7 +98,7 @@ async def test_gui_session_continuation():
     try:
         # This would require starting the optimized GUI
         print("ℹ️  To test GUI optimization:")
-        print("1. Run: streamlit run tn_staging_gui_optimized.py")
+        print("1. Run: streamlit run tn_staging_gui.py")
         print("2. Enter the test report above")
         print("3. Wait for T4NX + query")
         print("4. Respond with lymph node information")

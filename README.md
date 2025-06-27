@@ -1,14 +1,15 @@
 # TN Staging Agentic System
 
-An automated TN staging analysis system for radiologic reports using a step-wise, LLM-first agentic approach with retrieved AJCC guidelines.
+An automated TN staging analysis system for radiologic reports using LLM-first agentic approach with retrieved AJCC guidelines.
 
 ## 🎯 Overview
 
-This system helps radiologists produce high-quality, standardized TN staging reports by:
-- **Analyzing radiologic reports** using retrieved AJCC guidelines
-- **Interactive workflow** that asks clarifying questions when needed
-- **Step-wise processing** for reproducibility and transparency
-- **Dual implementation** supporting both OpenAI (cloud) and Ollama (local)
+**Production-ready system** (v2.0.3) that helps radiologists produce high-quality, standardized TN staging reports:
+- **Enhanced semantic retrieval** with case-driven guideline matching
+- **Multi-cancer architecture** with body part-specific vector stores  
+- **Smart Q&A workflow** with session continuity and selective preservation
+- **Dual backend support** - OpenAI (cloud) and Ollama (local)
+- **Interactive analysis** - asks targeted questions when additional information needed
 
 ## 🏗️ Architecture
 
@@ -35,7 +36,9 @@ graph TD
 
 ### Agents
 1. **Detection Agent** - Identifies body part and cancer type from report
-2. **Guideline Retrieval Agent** - Fetches relevant AJCC criteria from vector store
+2. **Guideline Retrieval Agent** - Intelligent routing to body part-specific vector stores
+   - Oral/oropharyngeal → specialized 17-chunk high-quality store
+   - Other body parts → general 34-chunk fallback store
 3. **T/N Staging Agents** - Direct LLM analysis with structured JSON output
 4. **Query Agent** - Generates targeted questions when confidence is low
 5. **Report Agent** - Produces final comprehensive staging report
@@ -90,35 +93,15 @@ streamlit run not_using/ajcc_tokenizer_openai.py  # Basic UI with cloud embeddin
 # - [MEDICAL TABLE] markers for enhanced retrieval
 ```
 
-## 🆕 Recent Improvements
+## 🆕 Major Milestones
 
-### v2.0.1 - Language Validation & Final Reports (2025-06-25)
+### v2.0.3 - Enhanced System Architecture (2025-06-27)
+- **🔍 Enhanced Semantic Retrieval**: 9x improvement in guideline content retrieval (3,723 vs 400 chars)
+- **🎯 Multi-Cancer Architecture**: Body part-specific vector stores with intelligent routing
+- **⚡ Smart Q&A Workflow**: Session continuity with selective preservation for 2-3x faster processing
+- **🏥 HPV/p16 Staging Resolved**: Complete access to cancer-specific staging tables
 
-**🌐 Language Validation System**
-- Fixed mixed-language outputs (e.g., "upper颈内淋巴结" → "upper cervical lymph nodes")
-- Global `utils/language_validation.py` with reusable validation functions
-- Automatic fallback for non-English medical terms
-- Enhanced prompt templates with explicit English-only requirements
-
-**📄 Complete Final Reports**
-- Fixed missing final report display in GUI
-- Added expandable "📄 Complete Staging Report" section
-- Comprehensive reports now include:
-  - Executive Summary with clinical significance
-  - Detailed staging analysis with confidence scores  
-  - Clinical recommendations for next steps
-  - Technical notes and disclaimers
-
-**🔧 System Stability**
-- Validated LLM-first architecture with no hardcoded medical rules
-- Confirmed guideline-based staging using semantic retrieval
-- Enhanced error handling and logging
-
-**📄 Updated Guidelines (2025-06-25)**
-- New PDF: `Oralcavity_oropharyngeal.pdf` with enhanced tabular content
-- 4 medical tables detected and properly tokenized (T/N staging for p16+ and p16- cancers)
-- 34 semantic chunks generated with PyMuPDF table extraction
-- Fixed tokenizer metadata bug for improved table detection
+*See `docs/milestone_v2.0.3_comprehensive.md` for complete technical details*
 
 ## 📖 Usage
 
@@ -250,32 +233,23 @@ tn_staging_agentic/
 
 ## 🔬 Key Features
 
-### LLM-First Architecture
-- **No hardcoded medical rules** - all staging logic through LLM + retrieved AJCC guidelines
-- **Direct report analysis** - no intermediate pattern extraction
-- **Structured JSON output** with staging, confidence, rationale, and extracted info
-- **Guidelines-based reasoning** - always references retrieved AJCC criteria
-- **Enhanced JSON parsing** - robust handling of LLM responses with `<think>` tags
+### Medical Accuracy & Safety
+- **LLM-first architecture** - No hardcoded medical rules, all staging via LLM + retrieved AJCC guidelines
+- **Enhanced semantic retrieval** - Case-driven guideline matching with 9x content improvement
+- **Multi-cancer support** - Body part-specific vector stores with intelligent routing
+- **Confidence-based validation** - Automatic query generation for uncertain staging (< 0.7 confidence or TX/NX)
 
-### Interactive Workflow  
-- **Confidence assessment** - pauses when staging is uncertain (T/N confidence < 0.7 or TX/NX results)
-- **Radiologic-focused questions** - asks specific questions about imaging findings
-- **Enhanced report re-analysis** - combines user responses with original reports
-- **Transparent reasoning** - shows rationale citing specific guideline criteria
-- **Real-time chat interface** - conversational UI with query handling
-
-### Medical Accuracy
-- **Proper N0 vs NX distinction** - N0 only with explicit negative findings, NX when unclear
-- **Radiologic context awareness** - questions focus on imaging findings, not pathology
-- **AJCC guideline compliance** - vector store retrieval of official staging criteria
-- **Confidence-based validation** - automatic query generation for uncertain staging
+### Smart Workflow
+- **Session continuity** - Context preserved across Q&A rounds with selective preservation
+- **Interactive analysis** - Targeted questions about imaging findings when additional info needed
+- **Optimized processing** - Skip re-analysis for high-confidence results (2-3x faster)
+- **Transparent reasoning** - Detailed rationale citing specific AJCC guideline criteria
 
 ### Production Ready
-- **Session logging** - Detailed logs for debugging and auditing
-- **Error handling** - Graceful fallbacks and clear error messages
-- **Testing suite** - Comprehensive tests for reliability
-- **Clean architecture** - Simplified, maintainable codebase
-- **Streamlit GUI** - User-friendly web interface with chat history
+- **Dual backend support** - OpenAI (cloud) or Ollama (local) with same functionality
+- **Comprehensive logging** - Session tracking, debugging, and audit trails
+- **Robust error handling** - Graceful fallbacks and clear error messages
+- **User-friendly interfaces** - CLI, API, and Streamlit GUI options
 
 ## 🧪 Testing
 
@@ -382,9 +356,13 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 ## 📚 Documentation
 
-- **CLAUDE.md** - Complete project specifications and requirements
-- **ARCHITECTURE.md** - Detailed architecture documentation with diagrams
-- **not_using/docs/** - Additional documentation and troubleshooting guides
+- **CLAUDE.md** - Project specifications and development guidelines
+- **ARCHITECTURE.md** - System architecture with workflow diagrams
+- **docs/** - Comprehensive technical documentation:
+  - `milestone_v2.0.3_comprehensive.md` - Complete system enhancement details
+  - `enhanced_semantic_retrieval.md` - Technical deep-dive on retrieval improvements
+  - `multi_cancer_architecture.md` - Multi-store architecture implementation
+  - `vector_store_building_guide.md` - Guide for adding new cancer types
 
 ## 🔗 References
 

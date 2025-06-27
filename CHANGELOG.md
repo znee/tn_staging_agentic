@@ -2,6 +2,11 @@
 
 ## [2.0.3] - 2025-06-27 - Enhanced Semantic Retrieval Implementation
 
+### 🔄 File Organization (Latest)
+- **Main GUI Updated**: Renamed `tn_staging_gui_optimized.py` → `tn_staging_gui.py` (now the main interface)
+- **Legacy GUI Archived**: Moved `tn_staging_gui.py` → `not_using/tn_staging_gui_legacy.py`
+- **Documentation Updated**: All references updated to reflect optimized GUI as main interface
+
 ### 🧠 Enhanced Semantic Retrieval System
 - **Case Characteristic Extraction**: LLM-based extraction of staging-relevant features from case reports
 - **Multi-Query Strategy**: 7 semantic queries per staging type for comprehensive guideline retrieval  

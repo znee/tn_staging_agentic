@@ -1,19 +1,17 @@
 # Radiologic TN Staging System
 
-**GitHub Repository**: https://github.com/znee/tn_staging_agentic
+**GitHub Repository**: https://github.com/znee/tn_staging_agentic  
+**Current Version**: v2.0.3 (Production Ready)
 
 ## Project Overview
 
-An automated TN staging analysis system for radiologic reports that helps radiologists produce high-quality, standardized reports using a step-wise, agentic approach.
+An automated TN staging analysis system for radiologic reports using LLM-first agentic approach with retrieved AJCC guidelines.
 
-### Key Features
-- **Automated staging analysis** from radiologic reports
-- **Step-wise processing** for reproducibility and accuracy
-- **Dual implementation**: OpenAI (cloud) and Ollama (local/privacy-focused)
-- **Guideline-based** staging with PDF tokenization support
-- **Session transfer optimization** for reliable query handling
-- **Selective preservation** of high-confidence staging results
-- **Compact CLI logging** with detailed JSONL data retention
+### Core Capabilities (v2.0.3)
+- **Enhanced semantic retrieval** with case characteristic extraction (9x content improvement)
+- **Multi-cancer architecture** with body part-specific vector stores and intelligent routing
+- **Smart Q&A workflow** with session continuity and selective preservation
+- **Production-ready system** with comprehensive error handling and logging
 
 ## System Architecture
 
@@ -155,33 +153,50 @@ When users provide additional information in response to queries, the system use
 
 ### Directory Structure
 ```
-radiologic-tn-staging/
-├── agents/
-│   ├── base.py
-│   ├── detect.py
-│   ├── retrieve_guideline.py
-│   ├── staging_t.py
-│   ├── staging_n.py
-│   ├── query.py
-│   └── report.py
-├── contexts/
-│   └── context_manager.py
-├── utils/
-│   └── language_validation.py
-├── docs/
-│   └── language_validation.md
-├── guidelines/
-│   ├── tokenizer.py
-│   └── pdfs/
-├── tests/
-│   ├── unit/
-│   └── integration/
-├── config/
-│   ├── openai_config.py
-│   └── ollama_config.py
-├── rebuild_vector_store.py
-├── tn_staging_gui.py
-└── main.py
+tn_staging_agentic/
+├── agents/                         # Core LLM agents
+│   ├── base.py                    # Base agent framework
+│   ├── detect.py                  # Body part/cancer detection
+│   ├── retrieve_guideline.py      # Multi-store guideline retrieval
+│   ├── staging_t.py              # T staging analysis
+│   ├── staging_n.py              # N staging analysis  
+│   ├── query.py                  # Interactive questioning
+│   └── report.py                 # Final report generation
+├── config/                        # LLM provider configurations
+│   ├── llm_providers.py          # Provider implementations
+│   ├── openai_config.py          # OpenAI configuration
+│   └── ollama_config.py          # Ollama configuration
+├── contexts/                      # Context and workflow management
+│   ├── context_manager.py        # Core context management
+│   └── context_manager_optimized.py  # Selective preservation logic
+├── docs/                         # Comprehensive documentation
+│   ├── milestone_v2.0.3_comprehensive.md  # Complete milestone details
+│   ├── enhanced_semantic_retrieval.md     # Retrieval improvements
+│   ├── multi_cancer_architecture.md       # Multi-store architecture
+│   └── vector_store_building_guide.md     # Guide for new cancer types
+├── faiss_stores/                 # Vector databases
+│   ├── ajcc_guidelines_local/    # General fallback store (34 chunks)
+│   ├── ajcc_guidelines_openai/   # OpenAI embedding version
+│   └── oral_oropharyngeal_local/ # Specialized store (17 chunks)
+├── guidelines/                   # AJCC PDF guidelines and tokenization
+│   ├── tokenizer.py              # PDF processing and vectorization
+│   └── pdfs/                     # AJCC staging guideline PDFs
+├── logs/                         # Session logs (gitignored)
+├── sessions/                     # Saved sessions (gitignored)
+├── tests/                        # Testing suite
+│   ├── unit/                     # Unit tests
+│   └── integration/              # Integration tests
+├── utils/                        # Utilities and logging
+│   ├── language_validation.py    # English-only output validation
+│   └── logging_config.py         # Dual logging system (CLI + JSONL)
+├── not_using/                    # Archived files and experimental code
+├── old/                          # Previous version (reference)
+├── main.py                       # Core system entry point
+├── tn_staging_api.py            # Command-line interface
+├── tn_staging_gui.py            # Streamlit web interface (optimized with session continuity)
+├── rebuild_vector_store.py      # Advanced PDF tokenizer
+├── environment.yml              # Conda environment specification
+└── requirements.txt             # Python dependencies
 ```
 
 ## Getting Started
@@ -277,216 +292,71 @@ The system implements **dual logging** for different use cases:
 3. Load and tokenize guideline PDFs
 4. Configure confidence thresholds
 
-## Development Notes
+## Development Status
 
-### Current Focus
-- [x] Implement base agent framework
-- [x] PDF tokenization and retrieval system
-- [x] T and N staging logic with confidence assessment
-- [x] Query generation for missing information
-- [x] Report generation with proper formatting
-- [x] Language validation system for English-only outputs
-- [x] Complete final report display in GUI
-- [x] Selective preservation system implementation
-- [x] Detection and guideline bypass optimization
-- [x] **Selective preservation Q&A workflow** debugging and optimization
-- [x] **Multi-round Q&A workflow** for persistent TX/NX resolution
-- [x] **Enhanced semantic retrieval** for complete T3/T4 and N1/N2/N3 guidelines
-- [x] **HPV/p16 staging issue resolved** through semantic matching approach
+### ✅ Milestone v2.0.3 Completed (June 27, 2025)
+**Production-ready system** with comprehensive enhancements:
 
-### Recent Major Improvements (2025-06-27)
-- [x] **Enhanced Semantic Retrieval System**: Completely redesigned guideline retrieval for comprehensive AJCC coverage
-  - **Multi-query semantic approach**: Uses case characteristics extraction + 7 targeted queries per staging type
-  - **Complete T3/T4 and N1/N2/N3 coverage**: Retrieves comprehensive staging criteria (vs previous T0-T2 limitation)
-  - **HPV/p16 ready**: Semantic matching automatically handles oropharyngeal staging variations
-  - **15.4x content increase**: Now retrieves ~7,446 chars vs previous 484 chars (still within model limits)
-  - **No hardcoded medical rules**: LLM-first architecture with dynamic case analysis
-- [x] **Selective Preservation System**: Implemented actual selective preservation in TNStagingAPI to skip redundant agent execution
-  - High-confidence T/N staging results (≥0.7 confidence) are preserved during session transfer
-  - Only low-confidence or TX/NX results trigger re-staging
-  - Significantly reduces processing time and redundant LLM calls
-- [x] **Detection and Guideline Bypass**: Optimized session transfer to skip unnecessary agent execution
-  - Body part and cancer type detection bypassed when preserved from previous session
-  - Guideline retrieval skipped when no re-staging needed or guidelines already preserved
-  - Comprehensive metadata tracking of which agents were skipped vs re-run
+1. **Enhanced Semantic Retrieval**: 9x improvement in guideline content retrieval
+   - Case characteristic extraction for semantic matching
+   - HPV/p16 staging issue completely resolved
+   - Complete T0-T4a and N0-N3 coverage achieved
 
-## 🎉 **MAJOR MILESTONE ACHIEVED** - Production-Ready Multi-Round Workflow! 
+2. **Multi-Cancer Architecture**: Body part-specific vector stores with intelligent routing
+   - Oral/oropharyngeal → specialized 17-chunk high-quality store
+   - Other cancers → general 34-chunk fallback store
+   - Enhanced logging with clear store selection visibility
 
-The TN staging system now successfully handles complex multi-round Q&A scenarios with full selective preservation optimization. **All critical workflow issues resolved!**
+3. **Smart Q&A Workflow**: Session continuity with selective preservation
+   - Context preserved across Q&A rounds
+   - 2-3x faster processing by skipping confirmed results
+   - Multi-round support for persistent TX/NX scenarios
 
-### Recently Resolved Issues (2025-06-27)
-- [✅] **Q&A Session Transfer Bug**: Fixed N staging context loss during selective preservation
-  - **Root Cause**: `needs_n_restaging()` method didn't handle `None` values correctly
-  - **Solution**: Enhanced `needs_t_restaging()` and `needs_n_restaging()` to detect missing staging
-  - **Result**: System now correctly re-runs staging agents when contexts are `None`
+*Complete technical details: `docs/milestone_v2.0.3_comprehensive.md`*
 
-- [✅] **Multi-Round Q&A Workflow**: Implemented support for persistent TX/NX scenarios
-  - **Issue**: System would stop after first Q&A round even if staging was still TX/NX
-  - **Solution**: Added query checking after re-staging with round tracking (max 3 rounds)
-  - **Features**: 
-    - Automatic detection of ongoing TX/NX after user responses
-    - Round counter to prevent infinite loops
-    - Preservation logic that never preserves TX/NX stages
-    - GUI displays round progress and TX/NX status
+### Next Phase: Performance Optimization (TODO #16)
+- **PRIORITY**: LLM speed optimization with batch processing and model testing
+- Additional cancer-specific stores (lung, breast, liver, etc.) when PDFs available
+- Backend comparison testing (OpenAI vs Ollama performance)
+## Technical Architecture
 
-### Current System Status ✅
+### Key Development Principles
 
-**PRODUCTION READY** - All core functionality implemented and tested:
-- ✅ Multi-round Q&A workflow with TX/NX resolution
-- ✅ Selective preservation optimization (70% time reduction)  
-- ✅ Agent bypass logic for detection and guideline retrieval
-- ✅ Robust error handling and partial staging support
-- ✅ Comprehensive logging and debugging capabilities
-- ✅ Round tracking with infinite loop prevention
+1. **LLM-First Architecture**
+   - **No hardcoded medical rules** - all staging logic through LLM + guidelines
+   - **Direct report analysis** - no intermediate pattern extraction layer
+   - **Structured JSON output** with staging, confidence, rationale, and extracted info
+   - **Guidelines-based reasoning** - always reference retrieved AJCC criteria
 
-### Future Enhancements  
-- [ ] Multiple guideline support for different body parts and cancer types (TODO #4 - Architecture ready)
-- [ ] LLM performance optimization with batch processing and model comparison (TODO #16)
-- [ ] Update report format with new user-provided prompt (pending user input)
-- [ ] Web interface for easier interaction
-- [ ] Batch processing capabilities
-- [ ] Integration with hospital systems
-- [ ] Multi-language support
-- [ ] Continuous learning from feedback
+2. **Error Handling & Testing**
+   - Handle incomplete or ambiguous reports gracefully
+   - Fallback to TX/NX when LLM analysis fails (not when medical criteria unclear)
+   - Robust JSON parsing with text extraction fallbacks
+   - Comprehensive tests for edge cases and various report formats
 
-## Technical Implementation Details
+3. **Performance & User Experience**
+   - Parallel execution of T and N staging agents
+   - Efficient PDF tokenization and retrieval
+   - **Interactive workflow** - pause for user input when confidence low
+   - Clear, specific questions when additional information needed
 
-### Enhanced Semantic Retrieval Architecture
+### Technical Requirements
 
-The enhanced semantic retrieval system solves the critical HPV/p16 staging issue and incomplete T3/T4 retrieval through a sophisticated multi-query approach:
+**Dependencies**:
+- **OpenAI Version**: OpenAI API, langchain, pdf parsing libraries
+- **Ollama Version**: Ollama, local LLM models, same parsing libraries
+- **Common**: PDF tokenization, vector storage for guideline retrieval
 
-#### Core Components
-
-1. **Case Characteristic Extraction**: 
-   ```python
-   case_summary = await self._extract_case_characteristics(case_report, body_part, cancer_type)
-   # Example: "T4 (5.4 cm, invading epiglottis, floor of mouth, oropharyngeal structures), N2 (multiple metastatic nodes)"
-   ```
-
-2. **Multi-Query Semantic Search**:
-   - **Direct case description** (most effective): Uses extracted characteristics for semantic matching
-   - **General staging guidelines**: Broad medical terminology queries  
-   - **Invasion/node-focused queries**: Specific clinical pattern matching
-   - **Advanced staging queries**: Targets complex scenarios (T3/T4, N2/N3)
-
-3. **Intelligent Content Filtering**:
-   ```python
-   # Prioritizes medical tables and comprehensive staging content
-   table_sections = [s for s in t_sections if "[MEDICAL TABLE]" in s]
-   # Deduplicates and combines results from multiple queries
-   unique_contents = set()  # Content hash-based deduplication
-   ```
-
-#### Key Improvements
-
-- **Coverage**: T0-T4a complete spectrum (vs previous T0-T2 limitation)
-- **Accuracy**: 95% confidence staging for T4N2 cases (vs previous T0N1 errors)
-- **HPV Ready**: Semantic matching retrieves oropharyngeal-specific staging variations
-- **Performance**: ~2,140 tokens context (within all local model limits)
-
-#### Implementation Files
-
-- **`agents/retrieve_guideline.py`**: Enhanced `_retrieve_t_guidelines_semantic()` and `_retrieve_n_guidelines_semantic()` methods
-- **Case analysis**: `_extract_case_characteristics()` for dynamic semantic query generation
-- **Content analysis**: `_analyze_staging_coverage()` validates retrieval completeness
-
-### Selective Preservation Architecture
-
-The selective preservation system operates on three levels:
-
-1. **Context Preservation**: High-confidence staging results (≥0.7) are preserved between sessions
-   ```python
-   preserve_t = t_stage != "TX" and t_confidence >= 0.7
-   preserve_n = n_stage != "NX" and n_confidence >= 0.7
-   ```
-
-2. **Agent Bypass Logic**: 
-   - **Detection Agent**: Skipped when body part and cancer type are preserved
-   - **Guideline Retrieval**: Skipped when no re-staging needed or guidelines preserved
-   - **T/N Staging Agents**: Only re-run for low-confidence or TX/NX results
-
-3. **Session Transfer Optimization**: 
-   - Creates new analysis session with preserved high-confidence contexts
-   - Enhanced report includes user response integrated naturally
-   - Comprehensive metadata tracks optimization decisions
-
-### Implementation Files
-
-- **`tn_staging_api.py`**: `analyze_with_selective_preservation()` method implements core logic
-- **`tn_staging_gui_optimized.py`**: Session transfer workflow with preservation decisions
-- **`contexts/context_manager_optimized.py`**: `needs_t_restaging()` and `needs_n_restaging()` methods
-- **`utils/logging_config.py`**: Tracks optimization events and agent execution details
-
-### Performance Benefits
-
-- **Time Reduction**: Up to 70% faster for high-confidence scenarios (skips 2-4 agents)
-- **LLM Call Reduction**: Eliminates redundant API calls for preserved results  
-- **Multi-Round Efficiency**: Preserves valid results across multiple Q&A rounds
-- **User Experience**: Maintains session continuity while optimizing background processing
-- **Debugging**: Complete metadata trail of preservation vs re-analysis decisions
-- **Production Ready**: Handles all TX/NX scenarios with intelligent round management
-
-## Recent Fixes and Improvements
-
-### 🚀 Session Transfer Optimization (2025-06-27)
-- **Issue**: Session continuation caused event loop closure errors ("Event loop is closed")
-- **Root Cause**: Asyncio event loops being closed during subprocess-based session continuation
-- **Solution**: Implemented session transfer approach with selective preservation
-- **Features**:
-  - Enhanced report creation with user responses
-  - Intelligent preservation of high-confidence staging results (≥70%)
-  - Conditional workflow routing (selective vs full re-analysis)
-  - Comprehensive context transfer without event loop issues
-- **Performance**: Avoids redundant re-staging of high-confidence results
-- **Reliability**: 100% success rate vs previous event loop failures
-
-### 📊 Compact CLI Logging (2025-06-27)
-- **Issue**: Log files contained verbose JSON data making CLI monitoring difficult
-- **Solution**: Implemented dual logging system
-- **Features**:
-  - **`*.log` files**: Compact CLI-friendly messages for monitoring
-  - **`*.jsonl` files**: Complete structured data for analysis
-  - Agent execution tracking with clear start/completion status
-  - Performance timing for all operations
-- **Example**: `[2025-06-27 00:20:14,450] [t_staging_agent] INFO: Starting execution`
-
-### 🔧 Language Validation System (2025-06-25)
-- **Issue**: LLM outputs occasionally contained mixed English-Chinese text (e.g., "upper颈内淋巴结")
-- **Solution**: Created global `utils/language_validation.py` with reusable validation functions
-- **Features**:
-  - Unicode pattern detection for non-Latin characters
-  - Medical term replacement dictionary (Chinese → English)
-  - Automatic fallback for mixed-language outputs
-  - Global enable/disable configuration
-- **Implementation**: Enhanced prompt templates with explicit English-only requirements
-
-### 📄 Final Report Display Fix (2025-06-25)
-- **Issue**: Complete staging reports were generated but not displayed in GUI
-- **Root Cause**: `ContextManager.get_summary()` method missing `final_report` field
-- **Solution**: Added `final_report` to context summary and GUI display
-- **Result**: GUI now shows expandable "📄 Complete Staging Report" section with:
-  - Executive Summary with TNM staging and clinical significance
-  - Detailed Staging Analysis with rationale and confidence
-  - Clinical Recommendations for next steps
-  - Technical Notes with disclaimers
-
-### 🔧 GUI Error Handling (2025-06-27)
-- **Issue**: TypeError when displaying null confidence values (`NoneType.__format__`)
-- **Solution**: Added null-safe formatting for confidence display
-- **Implementation**: Check for None before applying percentage formatting
-
-### 🏗️ System Architecture Validation
-- **Verified**: All agents follow LLM-first architecture without hardcoded medical rules
-- **Confirmed**: Guideline-based staging using semantic retrieval from AJCC PDFs
-- **Validated**: Agentic routing with smart question generation for missing information
+**Environment**:
+- **Conda Environment**: `/opt/homebrew/Caskroom/miniconda/base/envs/tnm-staging`
+- **Python**: 3.10.17 with all dependencies pre-installed including PyMuPDF
 
 ## Contributing
 
 When working on this project:
-1. Follow the agent-based architecture
-2. Ensure all agents have clear input/output contracts
+1. Follow LLM-first architecture principles - no hardcoded medical rules
+2. Ensure all agents have clear input/output contracts  
 3. Write comprehensive tests for new functionality
-4. Document any changes to the staging logic
-5. Keep the dual-backend compatibility in mind
-6. Use the language validation utilities for all LLM outputs
-7. Test final report generation and display in GUI
+4. Keep dual-backend compatibility (OpenAI/Ollama)
+5. Use conda environment for consistency: `conda activate tnm-staging`
+6. Update documentation in `docs/` folder for major changes
