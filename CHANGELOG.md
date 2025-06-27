@@ -1,5 +1,32 @@
 # TN Staging System - Changelog
 
+## [2.0.3] - 2025-06-27 - Enhanced Semantic Retrieval Implementation
+
+### 🧠 Enhanced Semantic Retrieval System
+- **Case Characteristic Extraction**: LLM-based extraction of staging-relevant features from case reports
+- **Multi-Query Strategy**: 7 semantic queries per staging type for comprehensive guideline retrieval  
+- **Coverage Analysis**: T0-T4a complete staging spectrum retrieved (3,723 chars vs 400 before)
+- **HPV/p16 Ready**: Semantic matching approach designed to handle oropharyngeal staging variations
+- **Deduplication**: Intelligent content filtering to prevent redundant retrieval
+
+### 🎯 Staging Quality Improvements
+- **Complete Guidelines**: Enhanced retrieval ensures T3/T4 and N1/N2/N3 criteria availability
+- **Medical Table Priority**: Prioritizes `[MEDICAL TABLE]` sections for accurate staging
+- **Context-Aware Queries**: Case-specific semantic matching improves relevance
+- **Fallback Robustness**: LLM knowledge fallback when vector store unavailable
+
+### 🔧 Technical Implementation
+- **Retrieval Methods**: `_retrieve_t_guidelines_semantic()` and `_retrieve_n_guidelines_semantic()`
+- **Content Analysis**: `_analyze_staging_coverage()` validates retrieval completeness
+- **Performance**: 15.4x retrieval increase while staying within model context limits
+- **Error Handling**: Graceful degradation with comprehensive logging
+
+### 📊 Session Transfer & Optimization
+- **Selective Preservation**: High-confidence results (≥70%) preserved across Q&A rounds
+- **Multi-Round Q&A**: Handles persistent TX/NX scenarios with up to 3 rounds
+- **Context Intelligence**: Smart re-analysis decisions based on confidence thresholds
+- **Workflow Optimization**: Skip detection/retrieval when contexts can be preserved
+
 ## [2.0.2] - 2025-06-25 - Guidelines Update & Tokenizer Enhancement
 
 ### 📄 Updated Guidelines

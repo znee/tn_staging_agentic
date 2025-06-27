@@ -153,10 +153,11 @@ class GuidelineRetrievalAgent(BaseAgent):
         """
         body_part = context.context_B["body_part"]
         cancer_type = context.context_B["cancer_type"]
+        case_report = context.context_R  # Get the original case report for semantic retrieval
         
-        # Retrieve guidelines
-        t_guidelines = await self._retrieve_t_guidelines(body_part, cancer_type)
-        n_guidelines = await self._retrieve_n_guidelines(body_part, cancer_type)
+        # Retrieve guidelines using enhanced semantic approach
+        t_guidelines = await self._retrieve_t_guidelines_semantic(body_part, cancer_type, case_report)
+        n_guidelines = await self._retrieve_n_guidelines_semantic(body_part, cancer_type, case_report)
         
         if t_guidelines and n_guidelines:
             return AgentMessage(
@@ -327,3 +328,265 @@ Be precise and use standard AJCC terminology."""
         except Exception as e:
             self.logger.error(f"LLM fallback failed: {str(e)}")
             return f"[Error: Could not retrieve {stage_type} staging guidelines for {cancer_type}]"
+
+    async def _extract_case_characteristics(self, case_report: str, body_part: str, cancer_type: str) -> str:
+        """Extract case characteristics for semantic retrieval.
+        
+        Args:
+            case_report: Original case report
+            body_part: Body part
+            cancer_type: Cancer type
+            
+        Returns:
+            Case summary for semantic matching
+        """
+        prompt = f"""Analyze this medical case report and extract the key characteristics that would be relevant for cancer staging:
+
+CASE REPORT:
+{case_report}
+
+CONTEXT:
+- Body part: {body_part}
+- Cancer type: {cancer_type}
+
+Extract and summarize the key staging-relevant characteristics in a single sentence that includes:
+- Tumor size/dimensions
+- Invasion patterns/structures involved
+- Lymph node involvement
+- Any other staging-relevant features
+
+Respond with ONLY the summary sentence, no explanations."""
+
+        try:
+            response = await self.llm_provider.generate(prompt)
+            return response.strip()
+        except Exception as e:
+            self.logger.error(f"Failed to extract case characteristics: {str(e)}")
+            # Fallback to basic description
+            return f"{cancer_type} of {body_part} with clinical findings"
+
+    async def _retrieve_t_guidelines_semantic(self, body_part: str, cancer_type: str, case_report: str) -> Optional[str]:
+        """Retrieve T staging guidelines using enhanced semantic approach.
+        
+        Args:
+            body_part: Body part/organ
+            cancer_type: Specific cancer type
+            case_report: Original case report
+            
+        Returns:
+            T staging guidelines text
+        """
+        if not self.vector_store:
+            return await self._llm_fallback_guidelines("T", body_part, cancer_type)
+            
+        try:
+            # Extract case characteristics for semantic matching
+            case_summary = await self._extract_case_characteristics(case_report, body_part, cancer_type)
+            self.logger.debug(f"🧠 Case summary for T staging: {case_summary}")
+            
+            # Multiple semantic queries for comprehensive retrieval
+            queries = [
+                # Direct case description (most effective from testing)
+                case_summary,
+                
+                # General staging guidelines
+                f"T staging guidelines {body_part} {cancer_type}",
+                f"tumor staging criteria {body_part} cancer",
+                
+                # Invasion-focused queries
+                f"invasion patterns {body_part} cancer staging",
+                f"deep invasion staging {cancer_type}",
+                
+                # Size-based queries (derived from case characteristics)
+                f"tumor size staging {body_part} cancer",
+                f"advanced T stage {body_part} {cancer_type}"
+            ]
+            
+            # Collect results from all queries
+            all_results = []
+            unique_contents = set()
+            
+            for query in queries:
+                self.logger.debug(f"🔍 T staging query: {query[:60]}...")
+                try:
+                    docs = self.vector_store.similarity_search(query, k=3)
+                    for doc in docs:
+                        content = doc.page_content
+                        # Deduplicate based on content hash
+                        content_hash = hash(content[:200])  # Use first 200 chars for dedup
+                        if content_hash not in unique_contents:
+                            unique_contents.add(content_hash)
+                            all_results.append(content)
+                except Exception as e:
+                    self.logger.warning(f"Query failed: {query[:30]}... - {str(e)}")
+                    continue
+            
+            self.logger.info(f"📄 Found {len(all_results)} unique documents for T staging")
+            
+            # Filter and prioritize results
+            t_sections = self._filter_and_combine_results(all_results, "T")
+            
+            if t_sections:
+                # Prioritize sections with medical tables
+                table_sections = [s for s in t_sections if "[MEDICAL TABLE]" in s]
+                if table_sections:
+                    result = "\n\n".join(table_sections[:3])
+                    self.logger.info(f"📊 Retrieved T guidelines with {len(table_sections)} table sections")
+                else:
+                    result = "\n\n".join(t_sections[:4])
+                    self.logger.info(f"📝 Retrieved T guidelines with {len(t_sections)} text sections")
+                
+                # Log what staging levels were found
+                staging_found = self._analyze_staging_coverage(result, "T")
+                self.logger.info(f"🎯 T staging coverage: {staging_found}")
+                
+                return result
+            else:
+                self.logger.warning(f"⚠️  No relevant T staging sections found for {cancer_type} of {body_part}")
+                return await self._llm_fallback_guidelines("T", body_part, cancer_type)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced T retrieval failed: {str(e)}")
+            return await self._llm_fallback_guidelines("T", body_part, cancer_type)
+
+    async def _retrieve_n_guidelines_semantic(self, body_part: str, cancer_type: str, case_report: str) -> Optional[str]:
+        """Retrieve N staging guidelines using enhanced semantic approach.
+        
+        Args:
+            body_part: Body part/organ
+            cancer_type: Specific cancer type
+            case_report: Original case report
+            
+        Returns:
+            N staging guidelines text
+        """
+        if not self.vector_store:
+            return await self._llm_fallback_guidelines("N", body_part, cancer_type)
+            
+        try:
+            # Extract case characteristics for semantic matching
+            case_summary = await self._extract_case_characteristics(case_report, body_part, cancer_type)
+            self.logger.debug(f"🧠 Case summary for N staging: {case_summary}")
+            
+            # Multiple semantic queries for comprehensive retrieval
+            queries = [
+                # Direct case description (most effective from testing)
+                case_summary,
+                
+                # General staging guidelines
+                f"N staging guidelines {body_part} {cancer_type}",
+                f"lymph node staging criteria {body_part} cancer",
+                
+                # Node-focused queries
+                f"lymph node involvement {cancer_type} staging",
+                f"regional lymph nodes {body_part} staging",
+                f"metastatic lymph nodes staging {cancer_type}",
+                
+                # Advanced staging
+                f"advanced N stage {body_part} {cancer_type}",
+                f"multiple lymph nodes staging criteria"
+            ]
+            
+            # Collect results from all queries
+            all_results = []
+            unique_contents = set()
+            
+            for query in queries:
+                self.logger.debug(f"🔍 N staging query: {query[:60]}...")
+                try:
+                    docs = self.vector_store.similarity_search(query, k=3)
+                    for doc in docs:
+                        content = doc.page_content
+                        # Deduplicate based on content hash
+                        content_hash = hash(content[:200])  # Use first 200 chars for dedup
+                        if content_hash not in unique_contents:
+                            unique_contents.add(content_hash)
+                            all_results.append(content)
+                except Exception as e:
+                    self.logger.warning(f"Query failed: {query[:30]}... - {str(e)}")
+                    continue
+            
+            self.logger.info(f"📄 Found {len(all_results)} unique documents for N staging")
+            
+            # Filter and prioritize results
+            n_sections = self._filter_and_combine_results(all_results, "N")
+            
+            if n_sections:
+                # Prioritize sections with medical tables
+                table_sections = [s for s in n_sections if "[MEDICAL TABLE]" in s]
+                if table_sections:
+                    result = "\n\n".join(table_sections[:3])
+                    self.logger.info(f"📊 Retrieved N guidelines with {len(table_sections)} table sections")
+                else:
+                    result = "\n\n".join(n_sections[:4])
+                    self.logger.info(f"📝 Retrieved N guidelines with {len(n_sections)} text sections")
+                
+                # Log what staging levels were found
+                staging_found = self._analyze_staging_coverage(result, "N")
+                self.logger.info(f"🎯 N staging coverage: {staging_found}")
+                
+                return result
+            else:
+                self.logger.warning(f"⚠️  No relevant N staging sections found for {cancer_type} of {body_part}")
+                return await self._llm_fallback_guidelines("N", body_part, cancer_type)
+                
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced N retrieval failed: {str(e)}")
+            return await self._llm_fallback_guidelines("N", body_part, cancer_type)
+
+    def _filter_and_combine_results(self, all_results: List[str], stage_type: str) -> List[str]:
+        """Filter and combine retrieval results for staging.
+        
+        Args:
+            all_results: List of retrieved content
+            stage_type: "T" or "N"
+            
+        Returns:
+            Filtered and prioritized sections
+        """
+        if stage_type == "T":
+            markers = ["t1", "t2", "t3", "t4", "t staging", "tumor", "invasion", "size"]
+        else:  # N staging
+            markers = ["n0", "n1", "n2", "n3", "n staging", "lymph", "node", "metastasis"]
+        
+        relevant_sections = []
+        for content in all_results:
+            # Look for staging content
+            if any(marker in content.lower() for marker in markers):
+                relevant_sections.append(content)
+        
+        return relevant_sections
+
+    def _analyze_staging_coverage(self, content: str, stage_type: str) -> str:
+        """Analyze what staging levels are covered in the retrieved content.
+        
+        Args:
+            content: Retrieved guidelines content
+            stage_type: "T" or "N"
+            
+        Returns:
+            Summary of staging levels found
+        """
+        content_lower = content.lower()
+        
+        if stage_type == "T":
+            stages = ["t0", "t1", "t2", "t3", "t4", "t4a", "t4b"]
+        else:  # N staging
+            stages = ["n0", "n1", "n2", "n3", "n2a", "n2b", "n2c"]
+        
+        found_stages = [stage for stage in stages if stage in content_lower]
+        
+        # Check for advanced staging indicators
+        advanced_indicators = []
+        if "iva" in content_lower or "stage iva" in content_lower:
+            advanced_indicators.append("Stage IVA")
+        if "ivb" in content_lower or "stage ivb" in content_lower:
+            advanced_indicators.append("Stage IVB")
+        if "hpv" in content_lower or "p16" in content_lower:
+            advanced_indicators.append("HPV/p16")
+        
+        coverage = ", ".join(found_stages) if found_stages else "none"
+        if advanced_indicators:
+            coverage += f" + {', '.join(advanced_indicators)}"
+            
+        return coverage
