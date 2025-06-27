@@ -2,7 +2,7 @@
 
 ## 🏗️ Agentic Workflow
 
-### Complete System Flow
+### Complete Multi-Round Workflow
 ```mermaid
 graph TD
     A[Radiologic Report Input] --> B[Detection Agent]
@@ -15,21 +15,44 @@ graph TD
     E --> |"T Stage<br/>Confidence<br/>Rationale"| G[Confidence Assessment]
     F --> |"N Stage<br/>Confidence<br/>Rationale"| G
     
-    G --> H{High Confidence?}
-    H --> |Yes| I[Report Generation Agent]
-    H --> |No or TX/NX| J[Query Agent]
+    G --> H{TX/NX or<br/>Low Confidence?}
+    H --> |"No<br/>(High Confidence)"| I[Report Generation Agent]
+    H --> |"Yes<br/>(TX, NX, or <70%)"| J[Query Agent]
     
-    J --> |"Targeted Questions"| K[User Response]
-    K --> |"Additional Info"| L[Workflow Continuation]
-    L --> E
-    L --> F
+    J --> |"Targeted Questions<br/>Round 1"| K[User Response]
+    K --> |"Enhanced Report<br/>Additional Info"| L[Selective Preservation]
     
-    I --> M[Final TN Staging Report]
+    L --> |"Preserve high-confidence results<br/>Re-analyze only TX/NX/<70%"| M[Optimized Re-staging]
+    
+    M --> N[Re-run T Agent]
+    M --> O[Re-run N Agent]
+    M --> P[Skip T Agent]
+    M --> Q[Skip N Agent]
+    
+    N --> R[Updated T Results]
+    O --> S[Updated N Results]
+    P --> R
+    Q --> S
+    
+    R --> T{Still TX/NX?<br/>Round < 3?}
+    S --> T
+    
+    T --> |"Yes<br/>(Continue)"| U[Query Agent Round 2+]
+    T --> |"No<br/>(Resolved or Max Rounds)"| I
+    
+    U --> |"Additional Questions"| V[User Response Round 2+]
+    V --> |"Further Enhanced Report"| L
+    
+    I --> W[Final TN Staging Report]
     
     style A fill:#e1f5fe
-    style M fill:#c8e6c9
+    style W fill:#c8e6c9
     style J fill:#fff3e0
     style K fill:#fff3e0
+    style U fill:#ffecb3
+    style V fill:#ffecb3
+    style L fill:#f3e5f5
+    style M fill:#f3e5f5
 ```
 
 ### Agent Interaction Details
@@ -155,14 +178,15 @@ Raw Report + Guidelines → LLM → JSON{stage, confidence, rationale, extracted
 ### **Workflow Flow**
 ```mermaid
 graph TD
-    A[Raw Report] --> B[Detection Agent]
-    B --> C[Guideline Retrieval]
-    C --> D[T/N Staging Agents]
-    D --> E{Confidence Check}
-    E -->|High| F[Report Generation]
-    E -->|Low| G[Query Agent]
-    G --> H[User Response]
-    H --> D
+    A[Raw Report] --> B[Analysis Phase]
+    B --> C{High Confidence?}
+    C -->|Yes| D[Final Report]
+    C -->|No| E[Interactive Q&A]
+    E --> F[Selective Re-analysis]
+    F --> G{Resolved?}
+    G -->|Yes| D
+    G -->|No, Round < 3| E
+    G -->|Max Rounds| D
 ```
 
 ### **Key Files Updated**
