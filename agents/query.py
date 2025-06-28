@@ -2,6 +2,7 @@
 
 from typing import List, Dict, Optional
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
+from config.llm_providers_structured import QueryResponse
 
 class QueryAgent(BaseAgent):
     """Agent that generates targeted questions to obtain missing information."""
@@ -188,26 +189,35 @@ Issues identified:
 Current T staging result: {context.context_T}
 Rationale: {context.context_RationaleT}
 
-Generate 1-2 specific, clinically relevant questions that would help determine the T stage.
+Generate ONE specific, clinically relevant question that would help determine the T stage.
 Focus on:
 - Tumor size (if missing)
 - Depth of invasion
 - Extension to adjacent structures
 - Specific anatomical landmarks
 
-Use standard English anatomical terms only.
+Use standard English anatomical terms only."""
 
-Return questions in JSON format:
+        # Try structured output first for better reliability
+        if hasattr(self.llm_provider, 'generate_structured'):
+            try:
+                result = await self._generate_t_questions_structured(prompt)
+                return [result]
+            except Exception as e:
+                self.logger.warning(f"Structured T question generation failed, falling back to manual parsing: {str(e)}")
+
+        # Fallback to manual JSON parsing
+        try:
+            response = await self.llm_provider.generate(prompt + """
+
+Return in JSON format:
 [
     {{
         "question": "specific question text",
         "purpose": "what this helps determine",
         "priority": "high/medium/low"
     }}
-]"""
-
-        try:
-            response = await self.llm_provider.generate(prompt)
+]""")
             import json
             import re
             
@@ -248,6 +258,21 @@ Return questions in JSON format:
                     "priority": "high"
                 }
             ]
+
+    async def _generate_t_questions_structured(self, prompt: str) -> Dict[str, str]:
+        """Generate T staging questions using structured output."""
+        result = await self.llm_provider.generate_structured(
+            prompt,
+            QueryResponse,
+            temperature=0.1
+        )
+        
+        # Convert to legacy format for compatibility
+        return {
+            "question": result["question"],
+            "purpose": "tumor_staging_clarification", 
+            "priority": result["priority"]
+        }
     
     async def _generate_n_questions(
         self,
@@ -282,7 +307,7 @@ Issues identified:
 Current N staging result: {context.context_N}
 Rationale: {context.context_RationaleN}
 
-Generate 1-2 specific questions about lymph node involvement from RADIOLOGIC IMAGING.
+Generate ONE specific question about lymph node involvement from RADIOLOGIC IMAGING.
 Focus on:
 - Presence/absence of enlarged or suspicious lymph nodes on imaging
 - Number of enlarged nodes visible on imaging
@@ -290,19 +315,28 @@ Focus on:
 - Anatomical location and laterality on imaging (use terms like "cervical", "supraclavicular", "level I/II/III/IV")
 
 Use radiologic terminology and ask about imaging findings, not pathology.
-Use standard English anatomical terms: "cervical lymph nodes", "internal jugular chain", "upper neck nodes".
+Use standard English anatomical terms: "cervical lymph nodes", "internal jugular chain", "upper neck nodes"."""
 
-Return questions in JSON format:
+        # Try structured output first for better reliability
+        if hasattr(self.llm_provider, 'generate_structured'):
+            try:
+                result = await self._generate_n_questions_structured(prompt)
+                return [result]
+            except Exception as e:
+                self.logger.warning(f"Structured N question generation failed, falling back to manual parsing: {str(e)}")
+
+        # Fallback to manual JSON parsing
+        try:
+            response = await self.llm_provider.generate(prompt + """
+
+Return in JSON format:
 [
     {{
         "question": "specific question text about imaging findings",
         "purpose": "what this helps determine",
         "priority": "high/medium/low"
     }}
-]"""
-
-        try:
-            response = await self.llm_provider.generate(prompt)
+]""")
             import json
             import re
             
@@ -343,6 +377,21 @@ Return questions in JSON format:
                     "priority": "high"
                 }
             ]
+
+    async def _generate_n_questions_structured(self, prompt: str) -> Dict[str, str]:
+        """Generate N staging questions using structured output."""
+        result = await self.llm_provider.generate_structured(
+            prompt,
+            QueryResponse,
+            temperature=0.1
+        )
+        
+        # Convert to legacy format for compatibility
+        return {
+            "question": result["question"],
+            "purpose": "lymph_node_staging_clarification", 
+            "priority": result["priority"]
+        }
     
     async def _generate_general_questions(
         self,

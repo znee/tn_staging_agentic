@@ -3,6 +3,7 @@
 import re
 from typing import Dict, Tuple, Optional, List, Any
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
+from config.llm_providers_structured import NStagingResponse
 
 class NStagingAgent(BaseAgent):
     """Agent that determines N staging based on lymph node findings."""
@@ -73,7 +74,81 @@ class NStagingAgent(BaseAgent):
         body_part: str,
         cancer_type: str
     ) -> Tuple[str, float, str, Dict]:
-        """Determine N stage directly from report and guidelines.
+        """Determine N stage using structured output when available."""
+        # Try structured output first for better performance
+        if hasattr(self.llm_provider, 'generate_structured'):
+            try:
+                result = await self._determine_n_stage_structured(
+                    report, guidelines, body_part, cancer_type
+                )
+                return (
+                    result["n_stage"],
+                    result["confidence"],
+                    result["rationale"],
+                    result["node_info"]
+                )
+            except Exception as e:
+                self.logger.warning(f"Structured output failed, falling back to manual parsing: {str(e)}")
+        
+        # Fallback to manual JSON parsing
+        return await self._determine_n_stage_manual(report, guidelines, body_part, cancer_type)
+    
+    async def _determine_n_stage_structured(
+        self,
+        report: str,
+        guidelines: str,
+        body_part: str,
+        cancer_type: str
+    ) -> Dict[str, Any]:
+        """Determine N stage using structured JSON output (preferred method)."""
+        prompt = f"""You are a medical staging expert analyzing lymph node status using AJCC guidelines.
+
+AJCC GUIDELINES:
+{guidelines}
+
+CASE INFORMATION:
+- Body part: {body_part}
+- Cancer type: {cancer_type}
+
+RADIOLOGIC REPORT:
+{report}
+
+Analyze the report and determine the N stage classification following these critical rules:
+
+CRITICAL N STAGING RULES:
+- N0: Use ONLY when lymph nodes are EXPLICITLY described as negative, non-enlarged, or no metastatic involvement
+- NX: Use when lymph node status is NOT mentioned, unclear, or cannot be assessed from the report
+- N1-N3: Use when metastatic lymph nodes are described with specific criteria
+
+EXAMPLES:
+- "No enlarged lymph nodes" → N0
+- "Lymph nodes appear normal" → N0
+- "No metastatic lymphadenopathy" → N0
+- Report mentions tumor but NO lymph node description → NX
+- "Lymph nodes not well visualized" → NX
+- "Multiple enlarged nodes, largest 3cm" → N1/N2/N3 (per guidelines)
+
+REQUIREMENTS:
+- DEFAULT TO NX when lymph node information is absent or unclear
+- Use N0 ONLY with explicit negative lymph node description
+- Include node sizes with units (e.g., "3.2 cm") when mentioned
+- Be conservative in your assessment"""
+        
+        result = await self.llm_provider.generate_structured(
+            prompt,
+            NStagingResponse,
+            temperature=0.1
+        )
+        return result
+    
+    async def _determine_n_stage_manual(
+        self,
+        report: str,
+        guidelines: str,
+        body_part: str,
+        cancer_type: str
+    ) -> Tuple[str, float, str, Dict]:
+        """Determine N stage using manual JSON parsing (fallback method).
         
         Args:
             report: Full radiologic report

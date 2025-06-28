@@ -3,6 +3,7 @@
 import re
 from typing import Dict, Tuple, Optional, List, Any
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
+from config.llm_providers_structured import TStagingResponse
 
 class TStagingAgent(BaseAgent):
     """Agent that determines T staging based on radiologic findings."""
@@ -73,7 +74,69 @@ class TStagingAgent(BaseAgent):
         body_part: str,
         cancer_type: str
     ) -> Tuple[str, float, str, Dict]:
-        """Determine T stage directly from report and guidelines.
+        """Determine T stage using structured output when available."""
+        # Try structured output first for better performance
+        if hasattr(self.llm_provider, 'generate_structured'):
+            try:
+                result = await self._determine_t_stage_structured(
+                    report, guidelines, body_part, cancer_type
+                )
+                return (
+                    result["t_stage"],
+                    result["confidence"],
+                    result["rationale"],
+                    result["extracted_info"]
+                )
+            except Exception as e:
+                self.logger.warning(f"Structured output failed, falling back to manual parsing: {str(e)}")
+        
+        # Fallback to manual JSON parsing
+        return await self._determine_t_stage_manual(report, guidelines, body_part, cancer_type)
+    
+    async def _determine_t_stage_structured(
+        self,
+        report: str,
+        guidelines: str,
+        body_part: str,
+        cancer_type: str
+    ) -> Dict[str, Any]:
+        """Determine T stage using structured JSON output (preferred method)."""
+        prompt = f"""You are a medical staging expert analyzing a radiologic report using AJCC guidelines.
+
+AJCC GUIDELINES:
+{guidelines}
+
+CASE INFORMATION:
+- Body part: {body_part}
+- Cancer type: {cancer_type}
+
+RADIOLOGIC REPORT:
+{report}
+
+Analyze the report against AJCC guidelines and determine the T stage classification.
+
+REQUIREMENTS:
+- Use TX only when tumor information is truly insufficient
+- Reference specific AJCC criteria in your rationale
+- Extract all relevant tumor measurements with units (e.g., "3.2 cm")
+- Extract invasion details and anatomical extensions
+- Be conservative in your assessment"""
+        
+        result = await self.llm_provider.generate_structured(
+            prompt,
+            TStagingResponse,
+            temperature=0.1
+        )
+        return result
+    
+    async def _determine_t_stage_manual(
+        self,
+        report: str,
+        guidelines: str,
+        body_part: str,
+        cancer_type: str
+    ) -> Tuple[str, float, str, Dict]:
+        """Determine T stage using manual JSON parsing (fallback method).
         
         Args:
             report: Full radiologic report
@@ -113,7 +176,7 @@ START YOUR RESPONSE WITH {{ AND END WITH }}
     "rationale": "Based on AJCC guidelines: [specific criteria and findings from report]",
     "extracted_info": {{
         "tumor_size": "dimension from report",
-        "largest_dimension": 5.4,
+        "largest_dimension": "5.4 cm",
         "invasions": ["anatomical structures"],
         "extensions": ["specific locations"],
         "multiple_tumors": false,

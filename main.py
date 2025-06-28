@@ -24,6 +24,7 @@ from config import (
     get_openai_config, get_ollama_config, get_hybrid_config,
     validate_openai_config, validate_ollama_config
 )
+from config.llm_providers_structured import create_structured_provider
 from utils.logging_config import setup_logging, SessionLogger
 
 class TNStagingSystem:
@@ -93,12 +94,13 @@ class TNStagingSystem:
         if not self._validate_config():
             raise ValueError(f"Invalid configuration for {self.backend} backend")
         
-        # Create LLM provider
+        # Create structured LLM provider for better performance and reliability
         if self.backend == "hybrid":
+            # TODO: Add structured hybrid provider support
             self.llm_provider = create_hybrid_provider(self.config)
         else:
-            factory = LLMProviderFactory()
-            self.llm_provider = factory.create_provider(self.backend, self.config)
+            # Use structured providers for better JSON handling and performance
+            self.llm_provider = create_structured_provider(self.backend, self.config)
         
         # Initialize agents
         self._initialize_agents()

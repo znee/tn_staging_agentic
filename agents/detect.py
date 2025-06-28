@@ -3,6 +3,7 @@
 import re
 from typing import Dict, Optional
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
+from config.llm_providers_structured import DetectionResponse
 
 class DetectionAgent(BaseAgent):
     """Agent that detects body part and cancer type from radiologic reports."""
@@ -167,6 +168,40 @@ class DetectionAgent(BaseAgent):
         Returns:
             Detection results
         """
+        # Try structured output first for better reliability
+        if hasattr(self.llm_provider, 'generate_structured'):
+            try:
+                result = await self._llm_detection_structured(report)
+                return {
+                    "body_part": result["body_part"].lower(),
+                    "cancer_type": result["cancer_type"],
+                    "method": "llm_structured",
+                    "confidence": result["confidence"]
+                }
+            except Exception as e:
+                self.logger.warning(f"Structured detection failed, falling back to manual parsing: {str(e)}")
+        
+        # Fallback to manual JSON parsing
+        return await self._llm_detection_manual(report)
+    
+    async def _llm_detection_structured(self, report: str) -> Dict[str, any]:
+        """Use structured output for detection (preferred method)."""
+        prompt = f"""Analyze this radiologic report and identify the primary body part/organ being examined and the specific type of cancer mentioned.
+
+Report:
+{report}
+
+Extract the body part and cancer type with your confidence level."""
+
+        result = await self.llm_provider.generate_structured(
+            prompt,
+            DetectionResponse,
+            temperature=0.1
+        )
+        return result
+    
+    async def _llm_detection_manual(self, report: str) -> Dict[str, str]:
+        """Fallback manual detection with JSON parsing."""
         prompt = f"""Analyze the following radiologic report and identify:
 1. The primary body part/organ being examined
 2. The specific type of cancer mentioned
@@ -214,11 +249,11 @@ If you cannot determine either with confidence, use null for that field."""
                 return {
                     "body_part": result["body_part"].lower(),
                     "cancer_type": result["cancer_type"],
-                    "method": "llm",
+                    "method": "llm_manual",
                     "confidence": result.get("confidence", 0.7)
                 }
         except Exception as e:
-            self.logger.error(f"LLM detection failed: {str(e)}")
+            self.logger.error(f"Manual detection failed: {str(e)}")
             self.logger.error(f"Response was: {response[:200]}...")
         
         return None

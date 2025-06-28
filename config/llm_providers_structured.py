@@ -106,7 +106,7 @@ Begin your response with {{ and end with }}. No other text allowed.
                     {"role": "system", "content": system_message},
                     {"role": "user", "content": enhanced_prompt}
                 ],
-                format=json.dumps(schema),  # Use Ollama's format parameter
+                format=schema,  # Use Ollama's format parameter (dict, not JSON string)
                 options={
                     "temperature": kwargs.get("temperature", 0.1),
                     "top_p": kwargs.get("top_p", 0.9),
@@ -190,7 +190,7 @@ from typing import Optional
 class ExtractedInfo(BaseModel):
     """Information extracted from radiologic report."""
     tumor_size: Optional[str] = Field(None, description="Tumor dimensions from report")
-    largest_dimension: Optional[float] = Field(None, description="Largest dimension in cm")
+    largest_dimension: Optional[str] = Field(None, description="Largest dimension with units (e.g., '5.4 cm')")
     invasions: List[str] = Field(default_factory=list, description="Invaded structures")
     extensions: List[str] = Field(default_factory=list, description="Extension locations")
     multiple_tumors: bool = Field(False, description="Multiple tumors present")
@@ -238,6 +238,19 @@ class QueryResponse(BaseModel):
     question: str = Field(..., min_length=10, description="Question for user")
     context_needed: List[str] = Field(..., description="Information needed")
     priority: str = Field("high", pattern=r'^(high|medium|low)$')
+
+
+class CaseCharacteristicsResponse(BaseModel):
+    """Case characteristics extraction response."""
+    case_summary: str = Field(..., min_length=10, description="Extracted case characteristics for semantic retrieval")
+    key_features: List[str] = Field(default_factory=list, description="Key staging-relevant features")
+    
+
+class ReportResponse(BaseModel):
+    """Report generation response."""
+    recommendations: str = Field(..., min_length=10, description="Clinical recommendations")
+    next_steps: List[str] = Field(default_factory=list, description="Recommended next steps")
+    confidence_notes: Optional[str] = Field(None, description="Notes about staging confidence")
 
 
 # Factory function to create structured providers
@@ -292,5 +305,7 @@ __all__ = [
     'NStagingResponse', 
     'DetectionResponse',
     'QueryResponse',
+    'CaseCharacteristicsResponse',
+    'ReportResponse',
     'ExtractedInfo'
 ]

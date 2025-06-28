@@ -3,6 +3,7 @@
 from typing import Dict, Optional
 from datetime import datetime
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
+from config.llm_providers_structured import ReportResponse
 
 class ReportAgent(BaseAgent):
     """Agent that generates formal TN staging reports."""
@@ -201,16 +202,30 @@ Consider:
 - N Stage: {data['n_stage']} (Confidence: {data['n_confidence']:.1%})
 - Any limitations in staging
 
+Provide evidence-based recommendations appropriate for the staging results."""
+
+        # Try structured output first for better reliability
+        if hasattr(self.llm_provider, 'generate_structured'):
+            try:
+                result = await self._generate_recommendations_structured(prompt, data)
+                return f"""RECOMMENDATIONS
+
+{result["recommendations"]}
+
+NEXT STEPS:
+{chr(10).join(f"• {step}" for step in result["next_steps"])}"""
+            except Exception as e:
+                self.logger.warning(f"Structured recommendations generation failed, falling back to manual generation: {str(e)}")
+
+        # Fallback to manual generation
+        try:
+            recommendations_text = await self.llm_provider.generate(prompt + """
+
 Provide recommendations for:
 1. Additional imaging or procedures if needed
 2. Multidisciplinary team consultation
-3. Treatment planning considerations
-4. Follow-up recommendations
-
-Keep recommendations evidence-based and appropriate for the staging results."""
-
-        try:
-            recommendations_text = await self.llm_provider.generate(prompt)
+3. Treatment planning considerations  
+4. Follow-up recommendations""")
             
             return f"""RECOMMENDATIONS
 
@@ -242,6 +257,25 @@ FOLLOW-UP:
 • Regular imaging surveillance per NCCN guidelines
 • Monitor for disease progression or treatment response
 • Address quality of life and supportive care needs"""
+
+    async def _generate_recommendations_structured(self, prompt: str, data: Dict[str, any]) -> Dict[str, any]:
+        """Generate recommendations using structured output."""
+        result = await self.llm_provider.generate_structured(
+            prompt,
+            ReportResponse,
+            temperature=0.1
+        )
+        
+        # Ensure we have meaningful next steps
+        if not result["next_steps"]:
+            result["next_steps"] = [
+                "Multidisciplinary team review recommended",
+                "Consider additional imaging if staging confidence is low",
+                "Confirm histologic diagnosis if not already obtained",
+                "Assess performance status and comorbidities for treatment planning"
+            ]
+        
+        return result
     
     def _combine_report_sections(
         self,

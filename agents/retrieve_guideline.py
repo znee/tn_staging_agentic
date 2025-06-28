@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple, Optional
 import os
 from pathlib import Path
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
+from config.llm_providers_structured import CaseCharacteristicsResponse
 
 class GuidelineRetrievalAgent(BaseAgent):
     """Agent that retrieves relevant staging guidelines from vector store with body part routing."""
@@ -567,6 +568,39 @@ Be precise and use standard AJCC terminology."""
         Returns:
             Case summary for semantic matching
         """
+        # Try structured output first for better feature extraction
+        if hasattr(self.llm_provider, 'generate_structured'):
+            try:
+                result = await self._extract_case_characteristics_structured(case_report, body_part, cancer_type)
+                return result["case_summary"]
+            except Exception as e:
+                self.logger.warning(f"Structured case extraction failed, falling back to manual: {str(e)}")
+        
+        # Fallback to simple text generation
+        return await self._extract_case_characteristics_manual(case_report, body_part, cancer_type)
+    
+    async def _extract_case_characteristics_structured(self, case_report: str, body_part: str, cancer_type: str) -> Dict[str, any]:
+        """Extract case characteristics using structured output (preferred method)."""
+        prompt = f"""Analyze this medical case report and extract key characteristics relevant for cancer staging.
+
+CASE REPORT:
+{case_report}
+
+CONTEXT:
+- Body part: {body_part}
+- Cancer type: {cancer_type}
+
+Extract and summarize the staging-relevant characteristics including tumor size, invasion patterns, lymph node involvement, and other relevant features."""
+
+        result = await self.llm_provider.generate_structured(
+            prompt,
+            CaseCharacteristicsResponse,
+            temperature=0.1
+        )
+        return result
+    
+    async def _extract_case_characteristics_manual(self, case_report: str, body_part: str, cancer_type: str) -> str:
+        """Extract case characteristics using text generation (fallback method)."""
         prompt = f"""Analyze this medical case report and extract the key characteristics that would be relevant for cancer staging:
 
 CASE REPORT:
@@ -672,9 +706,9 @@ Respond with ONLY the summary sentence, no explanations."""
                     result = "\n\n".join(t_sections[:4])
                     self.logger.info(f"📝 Retrieved T guidelines with {len(t_sections)} text sections")
                 
-                # Log what staging levels were found
-                staging_found = self._analyze_staging_coverage(result, "T")
-                self.logger.info(f"🎯 T staging coverage: {staging_found}")
+                # Analyze T staging coverage using LLM (guideline-based, not hardcoded)
+                staging_coverage = await self._analyze_staging_coverage_llm(result, "T", body_part, cancer_type)
+                self.logger.info(f"🎯 T staging coverage: {staging_coverage}")
                 
                 return result
             else:
@@ -766,9 +800,9 @@ Respond with ONLY the summary sentence, no explanations."""
                     result = "\n\n".join(n_sections[:4])
                     self.logger.info(f"📝 Retrieved N guidelines with {len(n_sections)} text sections")
                 
-                # Log what staging levels were found
-                staging_found = self._analyze_staging_coverage(result, "N")
-                self.logger.info(f"🎯 N staging coverage: {staging_found}")
+                # Analyze N staging coverage using LLM (guideline-based, not hardcoded)
+                staging_coverage = await self._analyze_staging_coverage_llm(result, "N", body_part, cancer_type)
+                self.logger.info(f"🎯 N staging coverage: {staging_coverage}")
                 
                 return result
             else:
@@ -802,36 +836,52 @@ Respond with ONLY the summary sentence, no explanations."""
         
         return relevant_sections
 
-    def _analyze_staging_coverage(self, content: str, stage_type: str) -> str:
-        """Analyze what staging levels are covered in the retrieved content.
+    async def _analyze_staging_coverage_llm(self, guidelines: str, stage_type: str, body_part: str, cancer_type: str) -> str:
+        """Analyze staging coverage using LLM and guidelines (respects LLM-first principles).
         
         Args:
-            content: Retrieved guidelines content
+            guidelines: Retrieved guideline content
             stage_type: "T" or "N"
+            body_part: Body part/organ
+            cancer_type: Cancer type
             
         Returns:
-            Summary of staging levels found
+            LLM-generated summary of staging levels covered
         """
-        content_lower = content.lower()
-        
-        if stage_type == "T":
-            stages = ["t0", "t1", "t2", "t3", "t4", "t4a", "t4b"]
-        else:  # N staging
-            stages = ["n0", "n1", "n2", "n3", "n2a", "n2b", "n2c"]
-        
-        found_stages = [stage for stage in stages if stage in content_lower]
-        
-        # Check for advanced staging indicators
-        advanced_indicators = []
-        if "iva" in content_lower or "stage iva" in content_lower:
-            advanced_indicators.append("Stage IVA")
-        if "ivb" in content_lower or "stage ivb" in content_lower:
-            advanced_indicators.append("Stage IVB")
-        if "hpv" in content_lower or "p16" in content_lower:
-            advanced_indicators.append("HPV/p16")
-        
-        coverage = ", ".join(found_stages) if found_stages else "none"
-        if advanced_indicators:
-            coverage += f" + {', '.join(advanced_indicators)}"
+        prompt = f"""INSTRUCTIONS: Analyze AJCC guidelines and list {stage_type} staging levels. NO THINKING, NO EXPLANATIONS, NO ADDITIONAL TEXT.
+
+BODY PART: {body_part}
+CANCER TYPE: {cancer_type}
+
+GUIDELINES:
+{guidelines[:2000]}
+
+TASK: List the specific {stage_type} staging levels mentioned in these guidelines.
+
+REQUIREMENTS:
+- Find explicit {stage_type} stage definitions (e.g., {stage_type}0, {stage_type}1, {stage_type}2, etc.)
+- Include subdivisions (e.g., {stage_type}4a, {stage_type}4b or {stage_type}2a, {stage_type}2b, {stage_type}2c)
+- Respond with ONLY a comma-separated list
+- If no stages found, respond with "none detected"
+
+RESPOND WITH ONLY THE LIST: {stage_type.lower()}0, {stage_type.lower()}1, {stage_type.lower()}2, {stage_type.lower()}3, {stage_type.lower()}4a, {stage_type.lower()}4b"""
+
+        try:
+            response = await self.llm_provider.generate(prompt)
+            # Clean response: remove thinking tags and extra whitespace
+            import re
+            cleaned = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)
+            cleaned = cleaned.strip().lower()
             
-        return coverage
+            # Extract only the staging list if other text is present
+            if "," in cleaned:
+                # Look for pattern like "t0, t1, t2, t3" or "n2a, n2b, n2c"
+                stage_pattern = rf'{stage_type.lower()}\d+[a-c]?'
+                stages = re.findall(stage_pattern, cleaned)
+                if stages:
+                    return ", ".join(stages)
+            
+            return cleaned if cleaned else f"none detected for {stage_type.lower()}"
+        except Exception as e:
+            self.logger.error(f"Failed to analyze {stage_type} staging coverage: {str(e)}")
+            return f"error analyzing {stage_type.lower()} coverage"
