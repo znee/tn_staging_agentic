@@ -167,6 +167,42 @@ class SessionLogger:
             
         self.log_event("agent_execution", event_data, level="error" if error else "info")
     
+    def log_llm_response(self, agent_name: str, model_name: str, 
+                        raw_response: str, cleaned_response: str, 
+                        thinking_content: Optional[str] = None,
+                        prompt_preview: Optional[str] = None,
+                        response_time: Optional[float] = None):
+        """Log LLM response with raw and cleaned content for analysis.
+        
+        Args:
+            agent_name: Name of the agent making the LLM call
+            model_name: Name of the LLM model used
+            raw_response: Original unprocessed response from LLM
+            cleaned_response: Response after cleaning (removing think tags, etc.)
+            thinking_content: Extracted thinking/reasoning content
+            prompt_preview: First 200 chars of prompt for context
+            response_time: Time taken for LLM response in seconds
+        """
+        event_data = {
+            "agent": agent_name,
+            "model": model_name,
+            "raw_response": raw_response,
+            "cleaned_response": cleaned_response,
+            "thinking_content": thinking_content,
+            "response_stats": {
+                "raw_length": len(raw_response),
+                "cleaned_length": len(cleaned_response),
+                "thinking_length": len(thinking_content) if thinking_content else 0,
+                "reduction_chars": len(raw_response) - len(cleaned_response),
+                "has_thinking": thinking_content is not None and len(thinking_content) > 0
+            },
+            "prompt_preview": prompt_preview[:200] + "..." if prompt_preview and len(prompt_preview) > 200 else prompt_preview,
+            "response_time_seconds": round(response_time, 3) if response_time else None
+        }
+        
+        # Log this as a detailed event in JSONL only
+        self.log_event("llm_response", event_data, level="debug")
+    
     def log_user_interaction(self, interaction_type: str, data: Dict[str, Any]):
         """Log user interactions (GUI or CLI)."""
         self.log_event("user_interaction", {

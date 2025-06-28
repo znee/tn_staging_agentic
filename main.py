@@ -25,6 +25,7 @@ from config import (
     validate_openai_config, validate_ollama_config
 )
 from config.llm_providers_structured import create_structured_provider
+from config.llm_providers_enhanced import create_enhanced_provider
 from utils.logging_config import setup_logging, SessionLogger
 
 class TNStagingSystem:
@@ -94,13 +95,17 @@ class TNStagingSystem:
         if not self._validate_config():
             raise ValueError(f"Invalid configuration for {self.backend} backend")
         
-        # Create structured LLM provider for better performance and reliability
+        # Create enhanced LLM provider with response cleaning and structured outputs
         if self.backend == "hybrid":
             # TODO: Add structured hybrid provider support
             self.llm_provider = create_hybrid_provider(self.config)
         else:
-            # Use structured providers for better JSON handling and performance
-            self.llm_provider = create_structured_provider(self.backend, self.config)
+            # Use enhanced providers with automatic response cleaning (Phase 1)
+            self.llm_provider = create_enhanced_provider(self.backend, self.config)
+            
+            # Pass session logger to enhanced provider for detailed LLM response logging
+            if hasattr(self.llm_provider, 'session_logger'):
+                self.llm_provider.session_logger = self.session_logger
         
         # Initialize agents
         self._initialize_agents()

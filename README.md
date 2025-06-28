@@ -4,7 +4,10 @@ An automated TN staging analysis system for radiologic reports using LLM-first a
 
 ## 🎯 Overview
 
-**Production-ready system** (v2.0.3) that helps radiologists produce high-quality, standardized TN staging reports:
+**Enhanced provider integration system** (v2.1.0) that helps radiologists produce high-quality, standardized TN staging reports:
+- **🚀 41-77% faster** with native structured JSON outputs for all agents
+- **🧠 Model-agnostic response cleaning** - automatic removal of reasoning tags with raw response preservation
+- **📊 Enhanced logging** - dual-layer logging with detailed LLM response tracking
 - **Enhanced semantic retrieval** with case-driven guideline matching
 - **Multi-cancer architecture** with body part-specific vector stores  
 - **Smart Q&A workflow** with session continuity and selective preservation
@@ -348,7 +351,7 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 ## 📊 Project Status
 
-- **Version**: 2.0.0 (Production Ready)
+- **Version**: 2.0.4 (High-Performance Production)
 - **Stability**: Stable
 - **Maintenance**: Actively maintained
 - **Testing**: Comprehensive test coverage

@@ -106,9 +106,15 @@ class GuidelineRetrievalAgent(BaseAgent):
                     # Fallback to main store if specialized store not found
                     provider_type = getattr(self.llm_provider, 'provider_type', 'ollama')
                     if provider_type == 'openai' or hasattr(self.llm_provider, 'openai_client'):
-                        fallback_path = self.vector_store_path + "_openai"
+                        if self.vector_store_path.endswith("_openai"):
+                            fallback_path = self.vector_store_path
+                        else:
+                            fallback_path = self.vector_store_path + "_openai"
                     else:
-                        fallback_path = self.vector_store_path + "_local"
+                        if self.vector_store_path.endswith("_local"):
+                            fallback_path = self.vector_store_path
+                        else:
+                            fallback_path = self.vector_store_path + "_local"
                     
                     store_info.update({
                         "routing_strategy": "fallback_to_main",
@@ -149,9 +155,15 @@ class GuidelineRetrievalAgent(BaseAgent):
         # Fall back to general store
         provider_type = getattr(self.llm_provider, 'provider_type', 'ollama')
         if provider_type == 'openai' or hasattr(self.llm_provider, 'openai_client'):
-            general_path = self.vector_store_path + "_openai"
+            if self.vector_store_path.endswith("_openai"):
+                general_path = self.vector_store_path
+            else:
+                general_path = self.vector_store_path + "_openai"
         else:
-            general_path = self.vector_store_path + "_local"
+            if self.vector_store_path.endswith("_local"):
+                general_path = self.vector_store_path
+            else:
+                general_path = self.vector_store_path + "_local"
         
         self.logger.info(f"📚 Using general store for {body_part}: {general_path}")
         return general_path, store_info

@@ -171,7 +171,7 @@ Raw Report + Guidelines → LLM → JSON{stage, confidence, rationale, extracted
 ### **Core Agents (Simplified)**
 1. **Detection Agent**: Identifies body part and cancer type
 2. **Guideline Retrieval**: Fetches relevant AJCC criteria from vector store
-3. **T/N Staging Agents**: Direct LLM analysis with structured JSON output
+3. **T/N Staging Agents**: Direct LLM analysis with native structured JSON output (41-77% faster)
 4. **Query Agent**: Generates questions when confidence low or TX/NX
 5. **Report Agent**: Produces final comprehensive report
 

@@ -22,17 +22,52 @@ class EnhancedOllamaProvider(StructuredOllamaProvider):
         self.response_cleaner = LLMResponseCleaner(self.model)
         self.preserve_thinking_in_logs = True
         self.logger = logging.getLogger(f"ollama_provider.{self.model}")
+        self.session_logger = None  # Will be set by agents that need detailed logging
     
     async def generate(self, prompt: str, **kwargs) -> str:
         """Generate response with automatic cleaning."""
+        import time
+        start_time = time.time()
+        
         # Get raw response from parent
         raw_response = await super().generate(prompt, **kwargs)
+        response_time = time.time() - start_time
         
         # Clean response
         cleaned_response, thinking_content = self.response_cleaner.clean_response(
             raw_response, 
             preserve_thinking=False
         )
+        
+        # Log to session logger if available
+        if self.session_logger and hasattr(self.session_logger, 'log_llm_response'):
+            try:
+                # Get current frame info for agent name
+                import inspect
+                frame = inspect.currentframe()
+                agent_name = "unknown"
+                
+                # Walk up the stack to find agent context
+                while frame:
+                    frame_info = frame.f_locals
+                    if 'self' in frame_info:
+                        obj = frame_info['self']
+                        if hasattr(obj, '__class__') and 'Agent' in obj.__class__.__name__:
+                            agent_name = obj.__class__.__name__.replace('Agent', '').lower()
+                            break
+                    frame = frame.f_back
+                
+                self.session_logger.log_llm_response(
+                    agent_name=agent_name,
+                    model_name=self.model,
+                    raw_response=raw_response,
+                    cleaned_response=cleaned_response,
+                    thinking_content=thinking_content,
+                    prompt_preview=prompt[:200] + "..." if len(prompt) > 200 else prompt,
+                    response_time=response_time
+                )
+            except Exception as e:
+                self.logger.warning(f"Failed to log LLM response: {e}")
         
         # Log thinking content if present and significant
         if thinking_content and self.preserve_thinking_in_logs:
