@@ -100,6 +100,7 @@ old/
 test_*.txt
 sample_reports/
 test_results/
+tests/development/  # Development and debugging test scripts
 # tests/ - include main test directory
 
 # ============================================================================
@@ -133,6 +134,7 @@ guidelines/pdfs/*.pdf
 # ============================================================================
 # CLAUDE.md is excluded as it contains internal development notes
 CLAUDE.md
+docs/archive/  # Archived documentation
 
 # ============================================================================
 # Conda Environment Files (INCLUDE - but exclude if contains sensitive data)
