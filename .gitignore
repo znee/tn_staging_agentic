@@ -131,7 +131,8 @@ guidelines/pdfs/*.pdf
 # ============================================================================
 # Project Documentation (INCLUDE - main project specifications)
 # ============================================================================
-# CLAUDE.md is now included as main project documentation
+# CLAUDE.md is excluded as it contains internal development notes
+CLAUDE.md
 
 # ============================================================================
 # Conda Environment Files (INCLUDE - but exclude if contains sensitive data)
