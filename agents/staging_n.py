@@ -3,7 +3,7 @@
 import re
 from typing import Dict, Tuple, Optional, List, Any
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
-from config.llm_providers_structured import NStagingResponse
+from config.llm_providers import NStagingResponse
 
 class NStagingAgent(BaseAgent):
     """Agent that determines N staging based on lymph node findings."""

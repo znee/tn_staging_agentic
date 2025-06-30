@@ -24,8 +24,7 @@ from config import (
     get_openai_config, get_ollama_config, get_hybrid_config,
     validate_openai_config, validate_ollama_config
 )
-from config.llm_providers_structured import create_structured_provider
-from config.llm_providers_enhanced import create_enhanced_provider
+from config.llm_providers import create_llm_provider
 from utils.logging_config import setup_logging, SessionLogger
 
 class TNStagingSystem:
@@ -100,8 +99,8 @@ class TNStagingSystem:
             # TODO: Add structured hybrid provider support
             self.llm_provider = create_hybrid_provider(self.config)
         else:
-            # Use enhanced providers with automatic response cleaning (Phase 1)
-            self.llm_provider = create_enhanced_provider(self.backend, self.config)
+            # Use unified LLM provider with all features (structured + enhanced)
+            self.llm_provider = create_llm_provider(self.backend, self.config)
             
             # Pass session logger to enhanced provider for detailed LLM response logging
             if hasattr(self.llm_provider, 'session_logger'):
@@ -205,6 +204,8 @@ class TNStagingSystem:
                     "n_rationale": final_context.context_RationaleN,
                     "body_part": final_context.context_B.get("body_part") if final_context.context_B else None,
                     "cancer_type": final_context.context_B.get("cancer_type") if final_context.context_B else None,
+                    "t_guidelines": final_context.context_GT,
+                    "n_guidelines": final_context.context_GN,
                     "session_id": self.session_id,
                     "backend": self.backend,
                     "duration": duration
@@ -225,6 +226,8 @@ class TNStagingSystem:
                     "final_report": final_context.final_report,
                     "query_generated": final_context.context_Q,
                     "user_response": final_context.context_RR,
+                    "t_guidelines": final_context.context_GT,
+                    "n_guidelines": final_context.context_GN,
                     "workflow_summary": results,
                     "session_id": self.session_id,
                     "backend": self.backend,
@@ -454,8 +457,8 @@ class TNStagingSystem:
             TNStagingSystem instance with loaded session
         """
         system = cls(backend)
-        system.context_manager = ContextManager.load_session(filepath)
-        system.orchestrator = WorkflowOrchestrator(system.agents, system.context_manager)
+        system.context_manager = OptimizedContextManager.load_session(filepath)
+        system.orchestrator = OptimizedWorkflowOrchestrator(system.agents, system.context_manager)
         return system
 
 async def main():

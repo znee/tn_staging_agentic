@@ -3,7 +3,7 @@
 from typing import Dict, Optional
 from datetime import datetime
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
-from config.llm_providers_structured import ReportResponse
+from config.llm_providers import ReportResponse
 
 class ReportAgent(BaseAgent):
     """Agent that generates formal TN staging reports."""

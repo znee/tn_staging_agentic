@@ -599,9 +599,9 @@ ADDITIONAL CLINICAL INFORMATION PROVIDED:
                             "n_confidence": n_confidence,
                             "t_rationale": previous_analysis.get('t_rationale'),
                             "n_rationale": previous_analysis.get('n_rationale'),
-                            # Include guidelines if available from workflow metadata
-                            "t_guidelines": previous_analysis.get('workflow_summary', {}).get('t_guidelines'),
-                            "n_guidelines": previous_analysis.get('workflow_summary', {}).get('n_guidelines'),
+                            # Include guidelines if available from analysis results
+                            "t_guidelines": previous_analysis.get('t_guidelines'),
+                            "n_guidelines": previous_analysis.get('n_guidelines'),
                             # Pass round tracking for multi-round scenarios
                             "round_number": current_round
                         }
@@ -622,9 +622,9 @@ ADDITIONAL CLINICAL INFORMATION PROVIDED:
                         preserved_contexts = {
                             "body_part": previous_analysis.get('body_part'),
                             "cancer_type": previous_analysis.get('cancer_type'),
-                            # Include guidelines if available from workflow metadata
-                            "t_guidelines": previous_analysis.get('workflow_summary', {}).get('t_guidelines'),
-                            "n_guidelines": previous_analysis.get('workflow_summary', {}).get('n_guidelines'),
+                            # Include guidelines if available from analysis results
+                            "t_guidelines": previous_analysis.get('t_guidelines'),
+                            "n_guidelines": previous_analysis.get('n_guidelines'),
                             # Pass round tracking for multi-round scenarios
                             "round_number": current_round
                         }

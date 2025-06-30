@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple, Optional
 import os
 from pathlib import Path
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
-from config.llm_providers_structured import CaseCharacteristicsResponse
+from config.llm_providers import CaseCharacteristicsResponse
 from config.guideline_config import guideline_config
 
 class GuidelineRetrievalAgent(BaseAgent):

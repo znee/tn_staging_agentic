@@ -2,7 +2,7 @@
 
 from typing import List, Dict, Optional
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
-from config.llm_providers_structured import QueryResponse
+from config.llm_providers import QueryResponse
 
 class QueryAgent(BaseAgent):
     """Agent that generates targeted questions to obtain missing information."""

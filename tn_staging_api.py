@@ -187,6 +187,11 @@ class TNStagingAPI:
             # Use existing system but reset context for fresh analysis
             selective_system = self.system
             
+            # Preserve existing guidelines before resetting context
+            existing_context = selective_system.context_manager.get_context()
+            existing_t_guidelines = existing_context.context_GT
+            existing_n_guidelines = existing_context.context_GN
+            
             # Reset context for fresh analysis while preserving system state
             from contexts.context_manager_optimized import AgentContext
             selective_system.context_manager.context = AgentContext()
@@ -236,11 +241,16 @@ class TNStagingAPI:
                 else:
                     selective_system.logger.info(f"❌ N staging not preserved - stage: {preserved_contexts.get('n_stage')}, confidence: {preserved_contexts.get('n_confidence', 0):.1%}")
                 
-                # Preserve guidelines if available (for efficiency)
+                # Preserve guidelines (from preserved_contexts OR existing context)
                 if preserved_contexts.get("t_guidelines"):
                     context.context_GT = preserved_contexts["t_guidelines"]
+                elif existing_t_guidelines:
+                    context.context_GT = existing_t_guidelines
+                    
                 if preserved_contexts.get("n_guidelines"):
                     context.context_GN = preserved_contexts["n_guidelines"]
+                elif existing_n_guidelines:
+                    context.context_GN = existing_n_guidelines
             
             # Run selective workflow
             if preserved_contexts:
@@ -253,20 +263,23 @@ class TNStagingAPI:
                 # Check if guideline retrieval is needed
                 needs_t_restaging = selective_system.context_manager.needs_t_restaging()
                 needs_n_restaging = selective_system.context_manager.needs_n_restaging()
-                has_preserved_guidelines = (
-                    preserved_contexts.get("t_guidelines") and 
-                    preserved_contexts.get("n_guidelines")
+                
+                # Check if guidelines are available (either preserved or already in context)
+                current_context = selective_system.context_manager.get_context()
+                has_guidelines_available = bool(
+                    current_context.context_GT and current_context.context_GN
                 )
                 
-                selective_system.logger.info(f"🔍 Re-staging needs: T={needs_t_restaging}, N={needs_n_restaging}, Guidelines preserved={has_preserved_guidelines}")
+                guidelines_reuse = "reuse" if has_guidelines_available else "retrieve"
+                selective_system.logger.info(f"🔍 Re-assessment needed: T={needs_t_restaging}, N={needs_n_restaging}, Guidelines={guidelines_reuse}")
                 
-                if (needs_t_restaging or needs_n_restaging) and not has_preserved_guidelines:
-                    # Need guidelines for re-staging and don't have them preserved
+                if (needs_t_restaging or needs_n_restaging) and not has_guidelines_available:
+                    # Need guidelines for re-staging and don't have them available
                     selective_system.logger.info("Retrieving guidelines for re-staging")
                     await selective_system.orchestrator._run_agent("retrieve_guideline")
-                elif has_preserved_guidelines and (needs_t_restaging or needs_n_restaging):
-                    # Have preserved guidelines but need re-staging - use preserved guidelines
-                    selective_system.logger.info("Using preserved guidelines for re-staging")
+                elif has_guidelines_available and (needs_t_restaging or needs_n_restaging):
+                    # Have guidelines available - reuse them for re-staging
+                    selective_system.logger.info("Reusing existing guidelines for re-staging")
                 elif not (needs_t_restaging or needs_n_restaging):
                     # No re-staging needed
                     selective_system.logger.info("Skipping guideline retrieval - no re-staging needed")

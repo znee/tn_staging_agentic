@@ -3,7 +3,7 @@
 import re
 from typing import Dict, Optional
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
-from config.llm_providers_structured import DetectionResponse
+from config.llm_providers import DetectionResponse
 
 class DetectionAgent(BaseAgent):
     """Agent that detects body part and cancer type from radiologic reports."""

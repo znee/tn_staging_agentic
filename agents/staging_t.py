@@ -3,7 +3,7 @@
 import re
 from typing import Dict, Tuple, Optional, List, Any
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
-from config.llm_providers_structured import TStagingResponse
+from config.llm_providers import TStagingResponse
 
 class TStagingAgent(BaseAgent):
     """Agent that determines T staging based on radiologic findings."""
