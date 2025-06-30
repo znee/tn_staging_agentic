@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from .base import BaseAgent, AgentContext, AgentMessage, AgentStatus
 from config.llm_providers_structured import CaseCharacteristicsResponse
+from config.guideline_config import guideline_config
 
 class GuidelineRetrievalAgent(BaseAgent):
     """Agent that retrieves relevant staging guidelines from vector store with body part routing."""
@@ -24,36 +25,43 @@ class GuidelineRetrievalAgent(BaseAgent):
         self._load_vector_store()
     
     def _initialize_body_part_mapping(self) -> Dict[str, str]:
-        """Initialize mapping of body parts to specialized vector stores.
+        """Initialize mapping of body parts to specialized vector stores using CSV config.
         
         Returns:
             Dictionary mapping body part names to store paths
         """
-        # Current mapping based on available PDFs
-        # When new PDFs are added, extend this mapping
-        mapping = {
-            # Oral cavity and oropharyngeal cancers (current PDF)
-            "oral cavity": "oral_oropharyngeal",
-            "oropharynx": "oral_oropharyngeal", 
-            "oropharyngeal": "oral_oropharyngeal",
-            "mouth": "oral_oropharyngeal",
-            "tongue": "oral_oropharyngeal",
-            "floor of mouth": "oral_oropharyngeal",
-            "hard palate": "oral_oropharyngeal",
-            "soft palate": "oral_oropharyngeal",
-            "tonsil": "oral_oropharyngeal",
-            "base of tongue": "oral_oropharyngeal",
+        try:
+            # Load mapping from CSV configuration
+            mapping = guideline_config.get_guideline_mapping()
             
-            # Future body parts - will use general store until specific PDFs added
-            # "lung": "lung",
-            # "breast": "breast", 
-            # "liver": "liver",
-            # "pancreas": "pancreas",
-            # etc.
-        }
-        
-        self.logger.debug(f"Initialized body part mapping with {len(mapping)} entries")
-        return mapping
+            self.logger.info(f"✅ Loaded guideline mapping from CSV: {len(mapping)} entries")
+            self.logger.info(f"📋 Specialized mappings: {guideline_config.get_available_cancer_types()}")
+            self.logger.info(f"📚 All unmapped types → general AJCC guidelines (ajcc_guidelines_local)")
+            
+            return mapping
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load CSV guideline mapping: {str(e)}")
+            
+            # Fallback to hardcoded mapping
+            self.logger.warning("🔄 Using fallback hardcoded mapping")
+            mapping = {
+                # Available specialized guidelines only
+                "oral cavity": "oral_oropharyngeal",
+                "oropharynx": "oral_oropharyngeal", 
+                "oropharyngeal": "oral_oropharyngeal",
+                "mouth": "oral_oropharyngeal",
+                "tongue": "oral_oropharyngeal",
+                "floor of mouth": "oral_oropharyngeal",
+                "hard palate": "oral_oropharyngeal",
+                "soft palate": "oral_oropharyngeal",
+                "tonsil": "oral_oropharyngeal",
+                "base of tongue": "oral_oropharyngeal"
+                # All other cancer types will automatically use general guidelines
+            }
+            
+            self.logger.debug(f"Initialized fallback body part mapping with {len(mapping)} entries")
+            return mapping
     
     def _determine_store_path(self, body_part: str, cancer_type: str) -> Tuple[str, Dict[str, str]]:
         """Determine which vector store to use based on body part and cancer type.
@@ -152,20 +160,22 @@ class GuidelineRetrievalAgent(BaseAgent):
                         "routing_note": f"Specialized store for {specialized_store} not yet built"
                     })
         
-        # Fall back to general store
+        # Fall back to general store for ANY unmapped cancer type
         provider_type = getattr(self.llm_provider, 'provider_type', 'ollama')
         if provider_type == 'openai' or hasattr(self.llm_provider, 'openai_client'):
-            if self.vector_store_path.endswith("_openai"):
-                general_path = self.vector_store_path
-            else:
-                general_path = self.vector_store_path + "_openai"
+            general_path = "faiss_stores/ajcc_guidelines_openai"
         else:
-            if self.vector_store_path.endswith("_local"):
-                general_path = self.vector_store_path
-            else:
-                general_path = self.vector_store_path + "_local"
+            general_path = "faiss_stores/ajcc_guidelines_local"
         
-        self.logger.info(f"📚 Using general store for {body_part}: {general_path}")
+        store_info.update({
+            "routing_strategy": "general_fallback",
+            "store_type": "general",
+            "specialized_available": False,
+            "routing_note": f"Using general AJCC guidelines for unmapped cancer type: {body_part} {cancer_type}"
+        })
+        
+        self.logger.info(f"📚 Using general store for unmapped {body_part}: {general_path}")
+        self.logger.info(f"   Note: All unmapped cancer types use general AJCC guidelines")
         return general_path, store_info
     
     def _load_specific_vector_store(self, store_path: str, store_info: Dict[str, str]):
@@ -380,6 +390,12 @@ class GuidelineRetrievalAgent(BaseAgent):
         self.logger.info(f"   Store Path: {target_store_path}")
         if store_info.get('specialized_store'):
             self.logger.info(f"   Specialized Store: {store_info['specialized_store']}")
+        if store_info.get('csv_config'):
+            self.logger.info(f"   📄 Using CSV configuration")
+        
+        # Log routing information
+        if store_info.get('routing_strategy') == 'universal_fallback':
+            self.logger.info(f"🔄 Using universal fallback for cancer type not in specialized guidelines")
         
         # Load the appropriate vector store if different from current
         if not self.vector_store or self.current_store_info != store_info:
@@ -393,6 +409,22 @@ class GuidelineRetrievalAgent(BaseAgent):
         n_guidelines = await self._retrieve_n_guidelines_semantic(body_part, cancer_type, case_report)
         
         if t_guidelines and n_guidelines:
+            # Determine guideline source
+            if store_info.get('store_type') == 'specialized':
+                guideline_source = store_info.get("specialized_store", "specialized")
+            else:
+                guideline_source = "general_ajcc_guidelines"
+            
+            metadata = {
+                "retrieval_method": "vector_store" if self.vector_store else "fallback",
+                "body_part": body_part,
+                "cancer_type": cancer_type,
+                "store_routing": store_info,  # Pass routing info to session
+                "store_path": target_store_path,
+                "guideline_source": guideline_source,
+                "guideline_store_used": target_store_path  # Clear indication of which store was used
+            }
+                
             return AgentMessage(
                 agent_id=self.agent_id,
                 status=AgentStatus.SUCCESS,
@@ -400,14 +432,7 @@ class GuidelineRetrievalAgent(BaseAgent):
                     "context_GT": t_guidelines,
                     "context_GN": n_guidelines
                 },
-                metadata={
-                    "retrieval_method": "vector_store" if self.vector_store else "fallback",
-                    "body_part": body_part,
-                    "cancer_type": cancer_type,
-                    "store_routing": store_info,  # Pass routing info to session
-                    "store_path": target_store_path,
-                    "guideline_source": store_info.get("specialized_store", "general")
-                }
+                metadata=metadata
             )
         else:
             return AgentMessage(
@@ -539,6 +564,42 @@ class GuidelineRetrievalAgent(BaseAgent):
         # Fallback to LLM knowledge
         return await self._llm_fallback_guidelines("N", body_part, cancer_type)
     
+    async def _llm_fallback_with_disclaimer(self, stage_type: str, body_part: str, cancer_type: str) -> str:
+        """Use LLM knowledge with explicit disclaimer for unavailable guidelines.
+        
+        Args:
+            stage_type: "T" or "N"
+            body_part: Body part/organ
+            cancer_type: Specific cancer type
+            
+        Returns:
+            Guidelines from LLM with clear disclaimer
+        """
+        disclaimer = f"""[IMPORTANT DISCLAIMER]
+No specific AJCC guidelines for {cancer_type} of {body_part} are available in this system.
+The following information is based on general medical knowledge and should NOT be used for clinical decisions.
+Please consult the appropriate AJCC manual or oncology specialist for accurate staging criteria.
+
+[GENERAL {stage_type} STAGING INFORMATION - FOR REFERENCE ONLY]"""
+
+        prompt = f"""Provide general information about {stage_type} staging for {cancer_type} of {body_part}.
+
+IMPORTANT: This is for general reference only, not clinical use.
+
+Format the response as general staging principles:
+- General {stage_type} staging concepts
+- Typical factors considered in {stage_type} staging for this cancer type
+- Common staging levels (if applicable)
+
+Be clear this is general information, not specific AJCC criteria."""
+
+        try:
+            response = await self.llm_provider.generate(prompt)
+            return f"{disclaimer}\n\n{response}"
+        except Exception as e:
+            self.logger.error(f"LLM fallback with disclaimer failed: {str(e)}")
+            return f"{disclaimer}\n\n[Error: Could not generate general {stage_type} staging information for {cancer_type}]"
+    
     async def _llm_fallback_guidelines(self, stage_type: str, body_part: str, cancer_type: str) -> str:
         """Use LLM knowledge as fallback for guidelines.
         
@@ -659,7 +720,10 @@ Respond with ONLY the summary sentence, no explanations."""
         if store_type == 'specialized' and specialized_store:
             self.logger.info(f"🔍 T-STAGING RETRIEVAL using SPECIALIZED store: {specialized_store}")
         else:
-            self.logger.info(f"🔍 T-STAGING RETRIEVAL using GENERAL store (fallback)")
+            self.logger.info(f"🔍 T-STAGING RETRIEVAL using GENERAL AJCC guidelines")
+            self.logger.info(f"   📚 Store: ajcc_guidelines_local (general staging criteria)")
+            if body_part.lower() not in ["oral cavity", "oropharynx", "oropharyngeal", "mouth", "tongue", "base of tongue", "tonsil"]:
+                self.logger.info(f"   ⚠️  Note: No specialized guidelines for {body_part} - using general AJCC criteria")
             
         try:
             # Extract case characteristics for semantic matching
@@ -752,7 +816,10 @@ Respond with ONLY the summary sentence, no explanations."""
         if store_type == 'specialized' and specialized_store:
             self.logger.info(f"🔍 N-STAGING RETRIEVAL using SPECIALIZED store: {specialized_store}")
         else:
-            self.logger.info(f"🔍 N-STAGING RETRIEVAL using GENERAL store (fallback)")
+            self.logger.info(f"🔍 N-STAGING RETRIEVAL using GENERAL AJCC guidelines")
+            self.logger.info(f"   📚 Store: ajcc_guidelines_local (general staging criteria)")
+            if body_part.lower() not in ["oral cavity", "oropharynx", "oropharyngeal", "mouth", "tongue", "base of tongue", "tonsil"]:
+                self.logger.info(f"   ⚠️  Note: No specialized guidelines for {body_part} - using general AJCC criteria")
             
         try:
             # Extract case characteristics for semantic matching

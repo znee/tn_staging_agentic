@@ -1,0 +1,11 @@
+cancer_type,body_part,guideline_store,status,notes
+oral_cavity,oral cavity,oral_oropharyngeal,available,Primary oral cavity cancers
+oropharynx,oropharynx,oral_oropharyngeal,available,Oropharyngeal cancers
+oropharyngeal,oropharyngeal,oral_oropharyngeal,available,Alternative spelling
+mouth,mouth,oral_oropharyngeal,available,General mouth cancers
+tongue,tongue,oral_oropharyngeal,available,Tongue cancers (part of oral cavity)
+floor_of_mouth,floor of mouth,oral_oropharyngeal,available,Floor of mouth cancers
+hard_palate,hard palate,oral_oropharyngeal,available,Hard palate cancers
+soft_palate,soft palate,oral_oropharyngeal,available,Soft palate cancers
+tonsil,tonsil,oral_oropharyngeal,available,Tonsillar cancers
+base_of_tongue,base of tongue,oral_oropharyngeal,available,Base of tongue cancers

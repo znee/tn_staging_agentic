@@ -4,7 +4,9 @@ An automated TN staging analysis system for radiologic reports using LLM-first a
 
 ## 🎯 Overview
 
-**Enhanced provider integration system** (v2.1.0) that helps radiologists produce high-quality, standardized TN staging reports:
+**CSV-configurable guideline routing system** (v2.2.0) that helps radiologists produce high-quality, standardized TN staging reports:
+- **📄 CSV-based configuration** - user-friendly guideline mapping without code changes
+- **🎯 Intelligent routing** - explicit unavailable cancer type handling with medical disclaimers
 - **🚀 41-77% faster** with native structured JSON outputs for all agents
 - **🧠 Model-agnostic response cleaning** - automatic removal of reasoning tags with raw response preservation
 - **📊 Enhanced logging** - dual-layer logging with detailed LLM response tracking
@@ -39,9 +41,10 @@ graph TD
 
 ### Agents
 1. **Detection Agent** - Identifies body part and cancer type from report
-2. **Guideline Retrieval Agent** - Intelligent routing to body part-specific vector stores
-   - Oral/oropharyngeal → specialized 17-chunk high-quality store
-   - Other body parts → general 34-chunk fallback store
+2. **Guideline Retrieval Agent** - CSV-configurable routing with explicit unavailable handling
+   - **Available guidelines** (10 types): oral cavity, oropharynx, etc. → specialized stores
+   - **Unavailable guidelines** (16 types): hypopharynx, lung, breast, etc. → LLM fallback with disclaimers
+   - **Easy expansion**: Add new cancer types by editing CSV configuration
 3. **T/N Staging Agents** - Direct LLM analysis with structured JSON output
 4. **Query Agent** - Generates targeted questions when confidence is low
 5. **Report Agent** - Produces final comprehensive staging report
@@ -98,13 +101,25 @@ streamlit run not_using/ajcc_tokenizer_openai.py  # Basic UI with cloud embeddin
 
 ## 🆕 Major Milestones
 
+### v2.2.0 - CSV Configuration System (2025-06-29)
+- **📄 CSV-based guideline mapping** - User-friendly configuration without code changes
+- **🎯 Explicit unavailable handling** - Clear disclaimers for cancer types without guidelines
+- **🛠️ Management utilities** - Command-line tools for easy administration
+- **🔄 Hot reloading** - Configuration changes take effect immediately
+- **🛡️ Robust fallback** - Multiple layers of error handling
+
+### v2.1.0 - Enhanced Provider System (2025-06-28)
+- **🚀 41-77% performance improvement** with structured JSON outputs
+- **🧠 Model-agnostic response cleaning** with raw response preservation
+- **📊 Enhanced dual-layer logging** with detailed LLM response tracking
+
 ### v2.0.3 - Enhanced System Architecture (2025-06-27)
 - **🔍 Enhanced Semantic Retrieval**: 9x improvement in guideline content retrieval (3,723 vs 400 chars)
 - **🎯 Multi-Cancer Architecture**: Body part-specific vector stores with intelligent routing
 - **⚡ Smart Q&A Workflow**: Session continuity with selective preservation for 2-3x faster processing
 - **🏥 HPV/p16 Staging Resolved**: Complete access to cancer-specific staging tables
 
-*See `docs/milestone_v2.0.3_comprehensive.md` for complete technical details*
+*See `docs/` directory for complete technical details and implementation guides*
 
 ## 📖 Usage
 
@@ -187,6 +202,34 @@ glossoepiglottic fold.
 
 ## 🛠️ Configuration
 
+### Cancer Type Guideline Mapping
+
+**📄 CSV-based configuration** (New in v2.2.0) - manage cancer type mappings without code changes:
+
+```bash
+# View all current mappings
+python config/manage_guidelines.py list
+
+# Add new guideline (when PDF becomes available)
+python config/manage_guidelines.py add lung lung lung_guidelines "Lung cancer staging guidelines"
+
+# Mark cancer type as unavailable
+python config/manage_guidelines.py unavailable thyroid "No specific AJCC guidelines available"
+
+# Check specific cancer type status
+python config/manage_guidelines.py check "oral cavity"
+
+# Validate configuration
+python config/manage_guidelines.py validate
+```
+
+**Edit directly in spreadsheet:**
+- Open `config/guideline_mapping.csv` in Excel/Google Sheets
+- Add/modify cancer type mappings
+- Save file - changes take effect immediately
+
+**Current status:** 10 available cancer types, 16 unavailable with explicit disclaimers
+
 ### Backend Options
 - **`ollama`** - Local LLM (private, no API costs)
 - **`openai`** - Cloud LLM (requires API key, faster)
@@ -224,7 +267,11 @@ tn_staging_agentic/
 │   ├── staging_n.py           # N staging analysis
 │   ├── query.py               # Interactive questioning
 │   └── report.py              # Final report generation
-├── config/                     # LLM provider configurations
+├── config/                     # Configuration files
+│   ├── guideline_mapping.csv  # Cancer type to guideline mappings (NEW)
+│   ├── guideline_config.py    # CSV configuration loader (NEW)
+│   ├── manage_guidelines.py   # Management utility (NEW)
+│   └── llm_providers*.py      # LLM provider configurations
 ├── contexts/                   # Context and workflow management
 ├── utils/                      # Logging and utilities
 ├── guidelines/                 # AJCC PDF guidelines
@@ -351,9 +398,9 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 ## 📊 Project Status
 
-- **Version**: 2.0.4 (High-Performance Production)
+- **Version**: 2.2.0 (CSV Configuration System)
 - **Stability**: Stable
-- **Maintenance**: Actively maintained
+- **Maintenance**: Actively maintained  
 - **Testing**: Comprehensive test coverage
 - **Documentation**: Complete
 
