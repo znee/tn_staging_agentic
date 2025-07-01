@@ -72,7 +72,7 @@ class ReportAgent(BaseAgent):
         report_data = self._prepare_report_data(context)
         
         # Generate different report sections
-        summary = self._generate_summary(report_data)
+        summary = await self._generate_summary(report_data)
         staging_details = self._generate_staging_details(report_data)
         recommendations = await self._generate_recommendations(context, report_data)
         
@@ -92,6 +92,7 @@ class ReportAgent(BaseAgent):
             metadata={
                 "report_sections": {
                     "summary": len(summary.split()),
+                    "findings": len(findings.split()),
                     "staging_details": len(staging_details.split()),
                     "recommendations": len(recommendations.split())
                 },
@@ -123,7 +124,7 @@ class ReportAgent(BaseAgent):
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
     
-    def _generate_summary(self, data: Dict[str, any]) -> str:
+    async def _generate_summary(self, data: Dict[str, any]) -> str:
         """Generate executive summary section.
         
         Args:
@@ -148,7 +149,7 @@ STAGING SUMMARY:
 • M Stage: Not assessed (requires additional imaging/clinical correlation)
 
 CLINICAL SIGNIFICANCE:
-{self._get_clinical_significance(data['t_stage'], data['n_stage'], data['body_part'])}"""
+{await self._get_clinical_significance(data['t_stage'], data['n_stage'], data['body_part'], data['cancer_type'])}"""
         
         return summary
     
@@ -195,14 +196,28 @@ LIMITATIONS:
         Returns:
             Recommendations section text
         """
-        prompt = f"""Generate clinical recommendations for a patient with {data['cancer_type']} of {data['body_part']} staged as {data['t_stage']}{data['n_stage']}.
+        # Enhanced prompt for radiologic staging report - LLM-first approach
+        prompt = f"""You are generating recommendations for a radiologic TN staging report. This report will be reviewed by a radiologist.
 
-Consider:
+Patient staging:
+- Cancer Type: {data['cancer_type']}
+- Primary Site: {data['body_part']}
 - T Stage: {data['t_stage']} (Confidence: {data['t_confidence']:.1%})
 - N Stage: {data['n_stage']} (Confidence: {data['n_confidence']:.1%})
-- Any limitations in staging
 
-Provide evidence-based recommendations appropriate for the staging results."""
+Provide professional recommendations appropriate for a radiologic staging report that will be reviewed by a radiologist. Focus on:
+
+1. Imaging recommendations for complete staging assessment
+2. Correlation with clinical findings and pathology
+3. Multidisciplinary team communication
+4. Follow-up imaging strategies
+5. Quality assurance for staging accuracy
+
+Avoid specific treatment protocols - focus on radiologic staging completeness and accuracy.
+Use professional medical language appropriate for radiologist review.
+Be specific about imaging modalities, techniques, and timing.
+
+Base recommendations on current imaging guidelines and staging protocols."""
 
         # Try structured output first for better reliability
         if hasattr(self.llm_provider, 'generate_structured'):
@@ -217,46 +232,58 @@ NEXT STEPS:
             except Exception as e:
                 self.logger.warning(f"Structured recommendations generation failed, falling back to manual generation: {str(e)}")
 
-        # Fallback to manual generation
+        # Fallback to manual generation - LLM-first approach
         try:
-            recommendations_text = await self.llm_provider.generate(prompt + """
-
-Provide recommendations for:
-1. Additional imaging or procedures if needed
-2. Multidisciplinary team consultation
-3. Treatment planning considerations  
-4. Follow-up recommendations""")
+            recommendations_text = await self.llm_provider.generate(prompt, temperature=0.3)
+            
+            # Generate next steps using LLM for radiologic context
+            next_steps_prompt = f"""Generate specific next steps for radiologic staging completion of {data['cancer_type']} staged as {data['t_stage']}{data['n_stage']}.
+            
+Focus on imaging, staging accuracy, and radiologist workflow. Provide 4-6 actionable steps.
+Confidence levels: T={data['t_confidence']:.1%}, N={data['n_confidence']:.1%}"""
+            
+            next_steps_text = await self.llm_provider.generate(next_steps_prompt, temperature=0.3)
             
             return f"""RECOMMENDATIONS
 
 {recommendations_text}
 
 NEXT STEPS:
-• Multidisciplinary team review recommended
-• Consider additional imaging if staging confidence is low
-• Confirm histologic diagnosis if not already obtained
-• Assess performance status and comorbidities for treatment planning"""
+{next_steps_text}"""
             
         except Exception as e:
             self.logger.error(f"Failed to generate recommendations: {str(e)}")
             
-            # Fallback recommendations
+            # Fallback recommendations - radiologic staging focus
             return f"""RECOMMENDATIONS
 
-ADDITIONAL WORKUP:
-• Complete staging with M evaluation (chest/abdomen/pelvis CT or PET-CT)
-• Pathologic confirmation if not already obtained
-• Consider molecular/genetic testing as appropriate
+RADIOLOGIC STAGING ASSESSMENT for {data['t_stage']}{data['n_stage']} {data['cancer_type']}:
 
-MULTIDISCIPLINARY CONSULTATION:
-• Oncology consultation for treatment planning
-• Surgical consultation if resectable disease
-• Radiation oncology consultation as indicated
+IMAGING COMPLETION:
+• Complete staging requires dedicated imaging protocol
+• Consider contrast-enhanced imaging for optimal tissue characterization
+• Evaluate for distant metastatic disease with appropriate imaging
+• Correlate findings with clinical examination and pathology results
 
-FOLLOW-UP:
-• Regular imaging surveillance per NCCN guidelines
-• Monitor for disease progression or treatment response
-• Address quality of life and supportive care needs"""
+STAGING ACCURACY:
+• Review AJCC staging criteria for {data['cancer_type']}
+• Consider multidisciplinary team review for staging confirmation
+• Document confidence levels and limitations in staging assessment
+• Recommend additional imaging if staging uncertainty exists
+
+FOLLOW-UP IMAGING:
+• Establish baseline imaging for treatment response monitoring
+• Plan surveillance imaging protocol per institutional guidelines
+• Consider advanced imaging techniques for complex cases
+• Ensure appropriate imaging follow-up intervals
+
+NEXT STEPS:
+• Multidisciplinary team staging conference review
+• Correlation with pathology and clinical findings
+• Complete staging imaging protocol if not already performed
+• Document staging rationale and confidence assessment
+• Establish baseline for treatment response monitoring
+• Consider additional imaging consultation if staging uncertain"""
 
     async def _generate_recommendations_structured(self, prompt: str, data: Dict[str, any]) -> Dict[str, any]:
         """Generate recommendations using structured output."""
@@ -266,14 +293,20 @@ FOLLOW-UP:
             temperature=0.1
         )
         
-        # Ensure we have meaningful next steps
+        # Ensure we have meaningful next steps - LLM generated
         if not result["next_steps"]:
-            result["next_steps"] = [
-                "Multidisciplinary team review recommended",
-                "Consider additional imaging if staging confidence is low",
-                "Confirm histologic diagnosis if not already obtained",
-                "Assess performance status and comorbidities for treatment planning"
-            ]
+            try:
+                next_steps_prompt = f"""Generate 4-6 specific next steps for radiologic staging of {data['cancer_type']} staged as {data['t_stage']}{data['n_stage']}. Focus on imaging, staging accuracy, and radiologist workflow."""
+                next_steps_text = await self.llm_provider.generate(next_steps_prompt, temperature=0.3)
+                # Parse LLM response into list format
+                result["next_steps"] = [line.strip().lstrip('•').strip() for line in next_steps_text.split('\n') if line.strip() and ('•' in line or line.strip().startswith(('1.', '2.', '3.', '4.', '5.', '6.')))]
+            except:
+                result["next_steps"] = [
+                    "Multidisciplinary team staging conference review",
+                    "Correlation with pathology and clinical findings", 
+                    "Complete staging imaging protocol assessment",
+                    "Document staging rationale and confidence levels"
+                ]
         
         return result
     
@@ -297,12 +330,12 @@ FOLLOW-UP:
         """
         header = f"""
 ==============================================================================
-TN STAGING ANALYSIS REPORT
+RADIOLOGIC CANCER STAGING ASSESSMENT
 ==============================================================================
 
 Report Date: {data['timestamp']}
 Session ID: {data['session_id']}
-Analysis System: Radiologic TN Staging v2.0
+Reporting System: AI-Assisted Radiologic Staging v2.3
 
 """
         
@@ -345,32 +378,61 @@ healthcare professionals and correlated with additional clinical information.
             
         return (t_conf + n_conf) / 2
     
-    def _get_clinical_significance(self, t_stage: str, n_stage: str, body_part: str) -> str:
-        """Get clinical significance text for staging combination.
+    async def _get_clinical_significance(self, t_stage: str, n_stage: str, body_part: str, cancer_type: str) -> str:
+        """Get clinical significance text for staging combination using LLM.
         
         Args:
             t_stage: T stage
             n_stage: N stage
             body_part: Body part
+            cancer_type: Cancer type
             
         Returns:
             Clinical significance explanation
         """
-        if t_stage == "TX" or n_stage == "NX":
-            return "Staging incomplete - additional information needed for accurate prognosis and treatment planning."
+        prompt = f"""Provide a brief clinical significance statement for {cancer_type} of {body_part} staged as {t_stage}{n_stage}.
+
+Focus on radiologic staging implications and general prognostic context appropriate for a radiologist's report.
+Keep it concise (1-2 sentences) and professional.
+Avoid specific treatment recommendations - focus on staging significance.
+
+If staging is incomplete (TX/NX), mention the need for additional information."""
         
-        stage_map = {
-            ("T1", "N0"): "Early-stage disease with excellent prognosis if properly treated.",
-            ("T2", "N0"): "Localized disease with good prognosis and multiple treatment options.",
-            ("T3", "N0"): "Locally advanced disease requiring multimodal treatment approach.",
-            ("T4", "N0"): "Advanced local disease with significant treatment challenges.",
-        }
+        try:
+            significance = await self.llm_provider.generate(prompt, temperature=0.3)
+            return significance.strip()
+        except Exception as e:
+            self.logger.warning(f"Failed to generate clinical significance via LLM: {str(e)}")
+            # Simple fallback without hardcoded medical logic
+            if t_stage == "TX" or n_stage == "NX":
+                return "Staging assessment incomplete - additional clinical correlation recommended."
+            else:
+                return "Staging results documented - clinical correlation recommended for treatment planning."
+    
+    async def _determine_stage_group(self, t_stage: str, n_stage: str) -> str:
+        """Determine overall stage group using LLM.
         
-        # Check for nodal involvement
-        if "N1" in n_stage or "N2" in n_stage or "N3" in n_stage:
-            return "Nodal involvement present - requires systemic therapy consideration and affects prognosis."
+        Args:
+            t_stage: T stage
+            n_stage: N stage
+            
+        Returns:
+            Stage group (I, II, III, IVA, IVB, IVC)
+        """
+        prompt = f"""Determine the overall AJCC stage group for {t_stage}{n_stage} (assuming M0).
+
+Provide only the stage group (e.g., I, II, III, IVA, IVB, IVC) based on current AJCC staging guidelines.
+If staging is incomplete (TX/NX), respond with "Cannot be determined - incomplete staging"."""
         
-        return stage_map.get((t_stage, n_stage), "Staging results require clinical correlation for optimal treatment planning.")
+        try:
+            stage_group = await self.llm_provider.generate(prompt, temperature=0.1)
+            return stage_group.strip()
+        except Exception as e:
+            self.logger.warning(f"Failed to determine stage group via LLM: {str(e)}")
+            if t_stage == "TX" or n_stage == "NX":
+                return "Cannot be determined - incomplete staging"
+            else:
+                return "Requires clinical correlation for stage grouping"
     
     def _get_confidence_explanation(self, confidence: float) -> str:
         """Get explanation for confidence level.

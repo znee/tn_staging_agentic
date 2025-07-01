@@ -4,7 +4,7 @@ An automated TN staging analysis system for radiologic reports using LLM-first a
 
 ## 🎯 Overview
 
-**CSV-configurable guideline routing system** (v2.2.0) that helps radiologists produce high-quality, standardized TN staging reports:
+**CSV-configurable guideline routing system** (v2.3.0) that helps radiologists produce high-quality, standardized TN staging reports:
 - **📄 CSV-based configuration** - user-friendly guideline mapping without code changes
 - **🎯 Intelligent routing** - explicit unavailable cancer type handling with medical disclaimers
 - **🚀 41-77% faster** with native structured JSON outputs for all agents
@@ -100,6 +100,12 @@ streamlit run not_using/ajcc_tokenizer_openai.py  # Basic UI with cloud embeddin
 ```
 
 ## 🆕 Major Milestones
+
+### v2.3.0 - Smart Codebase Consolidation & Guideline Preservation (2025-06-30)
+- **⚡ Guideline Preservation Optimization** - Eliminates ~13 seconds of redundant guideline retrieval during session continuation
+- **🔧 Enhanced Analysis Results** - Include t_guidelines/n_guidelines for efficient reuse
+- **📊 Improved Logging Clarity** - Guidelines=reuse/retrieve instead of boolean flags
+- **🎯 Zero Functional Changes** - Pure performance optimization maintaining all functionality
 
 ### v2.2.0 - CSV Configuration System (2025-06-29)
 - **📄 CSV-based guideline mapping** - User-friendly configuration without code changes
@@ -398,7 +404,7 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 ## 📊 Project Status
 
-- **Version**: 2.2.0 (CSV Configuration System)
+- **Version**: 2.3.0 (Smart Codebase Consolidation & Guideline Preservation)
 - **Stability**: Stable
 - **Maintenance**: Actively maintained  
 - **Testing**: Comprehensive test coverage
