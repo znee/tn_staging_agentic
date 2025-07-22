@@ -76,6 +76,9 @@ class ReportAgent(BaseAgent):
         staging_details = self._generate_staging_details(report_data)
         recommendations = await self._generate_recommendations(context, report_data)
         
+        # TODO: Implement professional findings section
+        # findings = await self._generate_professional_findings(report_data)
+        
         # Combine into full report
         full_report = self._combine_report_sections(
             summary, staging_details, recommendations, report_data
@@ -92,7 +95,6 @@ class ReportAgent(BaseAgent):
             metadata={
                 "report_sections": {
                     "summary": len(summary.split()),
-                    "findings": len(findings.split()),
                     "staging_details": len(staging_details.split()),
                     "recommendations": len(recommendations.split())
                 },
